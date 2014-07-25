@@ -1,0 +1,27 @@
+"""
+<Program Name>
+  router.r2py
+
+<Started>
+  July 24, 2014
+
+<Author>
+  Yanyan Zhuang
+
+<Purpose>
+  Router as the data sender, for the use case of rate adaptation.
+"""
+
+localip = getmyip()
+localport = 63100
+
+udpserversocket = listenformessage(localip, localport)
+log("router listening on IP: " + localip + ' port: ' + str(localport) 
+  + '\n')
+
+while True:
+  try:
+    remoteip, remoteport, message = udpserversocket.getmessage()
+    log("received: " + message + '\n')
+  except SocketWouldBlockError:
+    sleep(0.01)

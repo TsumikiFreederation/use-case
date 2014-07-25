@@ -1,0 +1,29 @@
+"""
+<Program Name>
+  client.r2py
+
+<Started>
+  July 24, 2014
+
+<Author>
+  Yanyan Zhuang
+
+<Purpose>
+  A smartphone acts as a client that reports to router its movement.
+"""
+
+localip = getmyip()
+localport = 63101
+
+destip = getmyip()
+destport = 63100
+
+message = "1"
+
+while True:
+  sendmessage(destip, destport, message, localip, localport)
+  if message == "1":
+    message = "0"
+  else:
+    message = "1"
+  sleep(3)
