@@ -26,6 +26,7 @@ def getdestipport():
   destport = 63100
   return (destip, destport)
 
+
 def processpacket(packet):
   content = packet.strip('[').strip(']')
   seq, payload = content.split(',')
@@ -41,12 +42,6 @@ def getmovement():
     amimove = 0
   return amimove
 
-
-def reset():
-  ack = ''
-  sequence = []
-  totallen = 0
-  starttime = getruntime()
 
 
 ############ main program ############
@@ -67,6 +62,7 @@ while True:
   try:
     remoteip, remoteport, packet = phonelistensocket.getmessage()
   except SocketWouldBlockError:
+    packet = ''
     pass
 
   if packet != '':  # when we received data
@@ -81,11 +77,13 @@ while True:
       duration = endtime - starttime
       throughput = totallen/duration
       log("received " + str(totallen) + " bits over " 
-        + str(duration) + " sec. throughput: " + 
+        + str(duration) + "sec. throughput: " + 
         str(throughput/1000000) + " Mbps\n")
       move = getmovement()
-      ack = str([sequence, move])
+      ack = str((sequence, move))
+      #log(str(sequence) + '\n')
       sendmessage(destip, destport, ack, localip, localport) 
-      reset()
-
-     
+      ack = ''
+      sequence = []
+      totallen = 0
+      starttime = getruntime()

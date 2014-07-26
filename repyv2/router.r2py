@@ -29,11 +29,39 @@ def getdestipport():
   return (destip, destport)
 
 
-def pause(duration):
+def sendpause(SEQ, duration):
   packet = [SEQ, 'PAUSE']
+  sequence.append(SEQ)
   sendmessage(destip, destport, str(packet), localip, localport)
+  SEQ = SEQ + 1
   sleep(duration)
   
+
+def translatemessage(message):
+  message = message.strip('(').strip(')')
+  seqlist, move = message.split('],')
+  seqs = seqlist.strip('[').split(',')
+  rcvseqs = []
+  
+  for seq in seqs:
+    seq = int(seq)
+    rcvseqs.append(seq)
+  return (rcvseqs, move) 
+
+
+def comparediff(sequence, receivedseqs):
+  #log(str(sequence) + '\n')
+  #log(str(receivedseqs) + '\n')
+  listdiff = list(set(sequence) - set(receivedseqs))
+  sentlen = len(sequence)
+  recvlen = len(receivedseqs)
+  difflent = sentlen - recvlen
+  log("sent: " + str(sentlen) + "; received: " + 
+    str(recvlen) + " diff: " + str(difflent) + '\n')
+  
+  lossrate = (float(difflent)/float(sentlen))*100  # percent
+  return (listdiff, lossrate) 
+
 
 ############ main program ############ 
 (localip, localport) = getlocalipport()
@@ -51,20 +79,25 @@ while True:
   packet = [SEQ, '0'*LENGTH]
   sequence.append(SEQ)  # record the sent seq
   sendmessage(destip, destport, str(packet), localip, localport)
-
   SEQ = SEQ + 1
   endtime = getruntime()
 
-  if endtime - starttime >= 0.3:
-    pause(10)
+  if endtime - starttime >= 0.05:
+    sendpause(SEQ, 1)
 
     try:
       # receive ack and movement hint from client
       remoteip, remoteport, message = routerlistensocket.getmessage()
-      log("received: " + message + '\n')  
+       
       # TODO: compare received seq with sent seq
+      receivedseqs, move = translatemessage(message)
+      (diff, lossrate) = comparediff(sequence, receivedseqs)
+      log("lost seqs: " + str(diff) + '; lossrate: ' 
+        + str(lossrate) + '\n')
       
       starttime = getruntime()
       sequence = []
+      receivedseqs = []
+      #sleep(3)
     except SocketWouldBlockError:
       pass
