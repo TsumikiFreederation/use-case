@@ -88,16 +88,16 @@ while True:
     try:
       # receive ack and movement hint from client
       remoteip, remoteport, message = routerlistensocket.getmessage()
-       
-      # TODO: compare received seq with sent seq
+      
       receivedseqs, move = translatemessage(message)
+
+      # compare received seq with sent seq
       (diff, lossrate) = comparediff(sequence, receivedseqs)
-      log("lost seqs: " + str(diff) + '; lossrate: ' 
-        + str(lossrate) + '\n')
+      log("lost seqs: " + str(diff) + '; lossrate: ' + str(lossrate) + '\n')
       
       starttime = getruntime()
       sequence = []
       receivedseqs = []
-      #sleep(3)
+
     except SocketWouldBlockError:
       pass

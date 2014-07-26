@@ -76,9 +76,8 @@ while True:
       endtime = getruntime()
       duration = endtime - starttime
       throughput = totallen/duration
-      log("received " + str(totallen) + " bits over " 
-        + str(duration) + "sec. throughput: " + 
-        str(throughput/1000000) + " Mbps\n")
+      log("received " + str(totallen) + " bits over " + str(duration) 
+        + "sec. throughput: " + str(throughput/1000000) + " Mbps\n")
       move = getmovement()
       ack = str((sequence, move))
       #log(str(sequence) + '\n')
