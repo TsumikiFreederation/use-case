@@ -12,16 +12,59 @@
   Router as the data sender, for the use case of rate adaptation.
 """
 
-localip = getmyip()
-localport = 63100
+############ define protocol parameters ############ 
+LENGTH = 9000    # packet length (change for different tx rates)
+SEQ = 0          # sequence number of packets
 
-udpserversocket = listenformessage(localip, localport)
-log("router listening on IP: " + localip + ' port: ' + str(localport) 
-  + '\n')
+
+def getlocalipport():
+  localip = getmyip()
+  localport = 63100
+  return (localip, localport)
+
+
+def getdestipport():
+  destip = getmyip()  # this needs to be changed to phone's IP
+  destport = 63101
+  return (destip, destport)
+
+
+def pause(duration):
+  packet = [SEQ, 'PAUSE']
+  sendmessage(destip, destport, str(packet), localip, localport)
+  sleep(duration)
+  
+
+############ main program ############ 
+(localip, localport) = getlocalipport()
+(destip, destport) = getdestipport()
+
+# router's socket for client's ack
+routerlistensocket = listenformessage(localip, localport)
+
+# initial variables
+starttime = getruntime()
+sequence = []
 
 while True:
-  try:
-    remoteip, remoteport, message = udpserversocket.getmessage()
-    log("received: " + message + '\n')
-  except SocketWouldBlockError:
-    sleep(0.01)
+  # router send a bunch of packets to the client
+  packet = [SEQ, '0'*LENGTH]
+  sequence.append(SEQ)  # record the sent seq
+  sendmessage(destip, destport, str(packet), localip, localport)
+
+  SEQ = SEQ + 1
+  endtime = getruntime()
+
+  if endtime - starttime >= 0.3:
+    pause(10)
+
+    try:
+      # receive ack and movement hint from client
+      remoteip, remoteport, message = routerlistensocket.getmessage()
+      log("received: " + message + '\n')  
+      # TODO: compare received seq with sent seq
+      
+      starttime = getruntime()
+      sequence = []
+    except SocketWouldBlockError:
+      pass

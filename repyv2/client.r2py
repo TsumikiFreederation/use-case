@@ -12,18 +12,80 @@
   A smartphone acts as a client that reports to router its movement.
 """
 
-localip = getmyip()
-localport = 63101
+dy_import_module_symbols('random.r2py')
 
-destip = getmyip()
-destport = 63100
 
-message = "1"
+def getlocalipport():
+  localip = getmyip()
+  localport = 63101
+  return (localip, localport)
+
+
+def getdestipport():
+  destip = getmyip()  # this needs to be changed to router IP
+  destport = 63100
+  return (destip, destport)
+
+def processpacket(packet):
+  content = packet.strip('[').strip(']')
+  seq, payload = content.split(',')
+  payload = payload.strip().strip('\'')
+  return (seq, payload)
+
+
+def getmovement():
+  flip = randomfloat()
+  if flip > 0.5:
+    amimove = 1
+  else: 
+    amimove = 0
+  return amimove
+
+
+def reset():
+  ack = ''
+  sequence = []
+  totallen = 0
+  starttime = getruntime()
+
+
+############ main program ############
+
+(localip, localport) = getlocalipport()
+(destip, destport) = getdestipport()
+
+phonelistensocket = listenformessage(localip, localport)
+
+ack = ''
+sequence = []  # for receiver to ack packet seq's
+totallen = 0   # record total bytes received
+starttime = getruntime()
+seq = 0
+packet = ''
 
 while True:
-  sendmessage(destip, destport, message, localip, localport)
-  if message == "1":
-    message = "0"
-  else:
-    message = "1"
-  sleep(3)
+  try:
+    remoteip, remoteport, packet = phonelistensocket.getmessage()
+  except SocketWouldBlockError:
+    pass
+
+  if packet != '':  # when we received data
+    (seq, payload) = processpacket(packet)
+    packet = ''
+    sequence.append(int(seq))
+    totallen = totallen + len(payload)*8  # one byte is 8 bits
+    #log("received " + seq + "th " + str(len(payload)*8) + " bits\n")
+
+    if payload == 'PAUSE':
+      endtime = getruntime()
+      duration = endtime - starttime
+      throughput = totallen/duration
+      log("received " + str(totallen) + " bits over " 
+        + str(duration) + " sec. throughput: " + 
+        str(throughput/1000000) + " Mbps\n")
+      move = getmovement()
+      ack = str([sequence, move])
+      sendmessage(destip, destport, ack, localip, localport) 
+      reset()
+
+     
