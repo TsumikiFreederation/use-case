@@ -15,7 +15,8 @@
 ############ define protocol parameters ############ 
 LENGTH = 9000    # packet length (change for different tx rates)
 SEQ = 0          # sequence number of packets
-
+WIN = 100     # check packet loss every WIN ack
+DEBUG = 1     # output some debug messages if DEBUG == 1
 
 def getlocalipport():
   localip = getmyip()
@@ -29,41 +30,37 @@ def getdestipport():
   return (destip, destport)
 
 
-def sendpause(SEQ, duration):
-  packet = [SEQ, 'PAUSE']
-  sequence.append(SEQ)
-  sendmessage(destip, destport, str(packet), localip, localport)
-  SEQ = SEQ + 1
-  sleep(duration)
-  
+def recvack(routerlistensocket, sequence):
 
-def translatemessage(message):
-  message = message.strip('(').strip(')')
-  seqlist, move = message.split('],')
-  seqs = seqlist.strip('[').split(',')
-  rcvseqs = []
-  
-  for seq in seqs:
-    seq = int(seq)
-    rcvseqs.append(seq)
-  return (rcvseqs, move) 
+  def ack():
+    while True:
+      try:
+        # receive ack and movement hint from client
+        remoteip, remoteport, message = routerlistensocket.getmessage()
+ 
+        try: 
+          if DEBUG == 1:
+            log("received " + str(message) + "th packet. ")
 
+          #seqlock.acquire(True)  
+          sequence.remove(int(message))
+          #seqlock.release()
 
-def comparediff(sequence, receivedseqs):
-  #log(str(sequence) + '\n')
-  #log(str(receivedseqs) + '\n')
-  listdiff = list(set(sequence) - set(receivedseqs))
-  sentlen = len(sequence)
-  recvlen = len(receivedseqs)
-  difflent = sentlen - recvlen
-  log("sent: " + str(sentlen) + "; received: " + 
-    str(recvlen) + " diff: " + str(difflent) + '\n')
-  
-  lossrate = (float(difflent)/float(sentlen))*100  # percent
-  return (listdiff, lossrate) 
+          if DEBUG == 1:
+            log("received seq queue: " + str(sequence) + "\n")
+
+        except ValueError:
+          log(message + " not in the sequence of pkts sent.\n")
+          pass
+
+      except SocketWouldBlockError:
+        pass
+
+  return ack
 
 
 ############ main program ############ 
+
 (localip, localport) = getlocalipport()
 (destip, destport) = getdestipport()
 
@@ -73,31 +70,27 @@ routerlistensocket = listenformessage(localip, localport)
 # initial variables
 starttime = getruntime()
 sequence = []
+seqlock = createlock()  # locks ops on the seq
+
+# thread that receives acks
+createthread(recvack(routerlistensocket, sequence))
+
 
 while True:
   # router send a bunch of packets to the client
   packet = [SEQ, '0'*LENGTH]
-  sequence.append(SEQ)  # record the sent seq
   sendmessage(destip, destport, str(packet), localip, localport)
+  
+  #seqlock.acquire(True)
+  sequence.append(SEQ)  # record the sent seq
+  #seqlock.release()
+
+  if DEBUG == 1:
+    log("sending " + str(SEQ) + "th packet. sending seq queue: " + str(sequence) + "\n")
+
+  if SEQ != 0 and SEQ % WIN == 0:
+    # check pkt loss   
+    sleep(0.5)  # wait for outstanding pkt to arrive
+    log("lost seqs: " + str(sequence) + '\n')
+
   SEQ = SEQ + 1
-  endtime = getruntime()
-
-  if endtime - starttime >= 0.05:
-    sendpause(SEQ, 1)
-
-    try:
-      # receive ack and movement hint from client
-      remoteip, remoteport, message = routerlistensocket.getmessage()
-      
-      receivedseqs, move = translatemessage(message)
-
-      # compare received seq with sent seq
-      (diff, lossrate) = comparediff(sequence, receivedseqs)
-      log("lost seqs: " + str(diff) + '; lossrate: ' + str(lossrate) + '\n')
-      
-      starttime = getruntime()
-      sequence = []
-      receivedseqs = []
-
-    except SocketWouldBlockError:
-      pass

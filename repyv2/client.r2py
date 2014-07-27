@@ -46,43 +46,44 @@ def getmovement():
 
 ############ main program ############
 
+DEBUG = 1  # output some debug messages if DEBUG == 1
+
 (localip, localport) = getlocalipport()
 (destip, destport) = getdestipport()
 
 phonelistensocket = listenformessage(localip, localport)
 
 ack = ''
-sequence = []  # for receiver to ack packet seq's
+packet = ''
 totallen = 0   # record total bytes received
 starttime = getruntime()
-seq = 0
-packet = ''
 
 while True:
   try:
     remoteip, remoteport, packet = phonelistensocket.getmessage()
+    endtime = getruntime()
   except SocketWouldBlockError:
-    packet = ''
     pass
 
   if packet != '':  # when we received data
     (seq, payload) = processpacket(packet)
     packet = ''
-    sequence.append(int(seq))
     totallen = totallen + len(payload)*8  # one byte is 8 bits
-    #log("received " + seq + "th " + str(len(payload)*8) + " bits\n")
+    if DEBUG == 1:
+      log("received " + seq + "th " + str(len(payload)*8) + 
+        " bits. in total " + str(totallen) + " bits\n")
 
-    if payload == 'PAUSE':
-      endtime = getruntime()
-      duration = endtime - starttime
-      throughput = totallen/duration
-      log("received " + str(totallen) + " bits over " + str(duration) 
-        + "sec. throughput: " + str(throughput/1000000) + " Mbps\n")
-      move = getmovement()
-      ack = str((sequence, move))
-      #log(str(sequence) + '\n')
-      sendmessage(destip, destport, ack, localip, localport) 
-      ack = ''
-      sequence = []
+    # calc throughput
+    endtime = getruntime()
+    duration = endtime - starttime
+    if duration >= 1.0:
+      throughput = float(totallen)/duration/1000000
+      starttime = getruntime()  # reset clock
       totallen = 0
-      starttime = getruntime()
+      log("throughput: " + str(throughput) + " Mbps\n")
+
+    # send back ack!
+    ack = seq 
+    sendmessage(destip, destport, ack, localip, localport)
+
+    
