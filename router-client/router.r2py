@@ -1,0 +1,96 @@
+"""
+<Program Name>
+  router.r2py
+
+<Started>
+  July 24, 2014
+
+<Author>
+  Yanyan Zhuang
+
+<Purpose>
+  Router as the data sender, for the use case of rate adaptation.
+"""
+
+############ define protocol parameters ############ 
+LENGTH = 9000    # packet length (change for different tx rates)
+SEQ = 0          # sequence number of packets
+WIN = 300     # check packet loss every WIN ack
+DEBUG = 1     # output some debug messages if DEBUG == 1
+
+def getlocalipport():
+  localip = getmyip()
+  localport = 63100
+  return (localip, localport)
+
+
+def getdestipport():
+  destip = getmyip()  # this needs to be changed to phone's IP
+  destport = 63101
+  return (destip, destport)
+
+
+def recvack(routerlistensocket, sequence):
+
+  def ack():
+    while True:
+      try:
+        # receive ack and movement hint from client
+        remoteip, remoteport, message = routerlistensocket.getmessage()
+ 
+        try: 
+          if DEBUG == 1:
+            log("received " + str(message) + "th packet. ")
+
+          #seqlock.acquire(True)  
+          sequence.remove(int(message))
+          #seqlock.release()
+
+          if DEBUG == 1:
+            log("received seq queue: " + str(sequence) + "\n")
+
+        except ValueError:
+          log(message + " not in the sequence of pkts sent.\n")
+          pass
+
+      except SocketWouldBlockError:
+        pass
+
+  return ack
+
+
+############ main program ############ 
+
+(localip, localport) = getlocalipport()
+(destip, destport) = getdestipport()
+
+# router's socket for client's ack
+routerlistensocket = listenformessage(localip, localport)
+
+# initial variables
+starttime = getruntime()
+sequence = []
+seqlock = createlock()  # locks ops on the seq
+
+# thread that receives acks
+createthread(recvack(routerlistensocket, sequence))
+
+
+while True:
+  # router send a bunch of packets to the client
+  packet = [SEQ, '0'*LENGTH]
+  sendmessage(destip, destport, str(packet), localip, localport)
+  
+  #seqlock.acquire(True)
+  sequence.append(SEQ)  # record the sent seq
+  #seqlock.release()
+
+  if DEBUG == 1:
+    log("sending " + str(SEQ) + "th packet. sending seq queue: " + str(sequence) + "\n")
+
+  if SEQ != 0 and SEQ % WIN == 0:
+    # check pkt loss   
+    sleep(0.5)  # wait for outstanding pkt to arrive
+    log("lost seqs: " + str(sequence) + '\n')
+
+  SEQ = SEQ + 1

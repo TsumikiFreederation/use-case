@@ -1,0 +1,89 @@
+"""
+<Program Name>
+  client.r2py
+
+<Started>
+  July 24, 2014
+
+<Author>
+  Yanyan Zhuang
+
+<Purpose>
+  A smartphone acts as a client that reports to router its movement.
+"""
+
+dy_import_module_symbols('random.r2py')
+
+
+def getlocalipport():
+  localip = getmyip()
+  localport = 63101
+  return (localip, localport)
+
+
+def getdestipport():
+  destip = getmyip()  # this needs to be changed to router IP
+  destport = 63100
+  return (destip, destport)
+
+
+def processpacket(packet):
+  content = packet.strip('[').strip(']')
+  seq, payload = content.split(',')
+  payload = payload.strip().strip('\'')
+  return (seq, payload)
+
+
+def getmovement():
+  flip = randomfloat()
+  if flip > 0.5:
+    amimove = 1
+  else: 
+    amimove = 0
+  return amimove
+
+
+
+############ main program ############
+
+DEBUG = 0  # output some debug messages if DEBUG == 1
+
+(localip, localport) = getlocalipport()
+(destip, destport) = getdestipport()
+
+phonelistensocket = listenformessage(localip, localport)
+
+ack = ''
+packet = ''
+totallen = 0   # record total bytes received
+starttime = getruntime()
+
+while True:
+  try:
+    remoteip, remoteport, packet = phonelistensocket.getmessage()
+    endtime = getruntime()
+  except SocketWouldBlockError:
+    pass
+
+  if packet != '':  # when we received data
+    (seq, payload) = processpacket(packet)
+    packet = ''
+    totallen = totallen + len(payload)*8  # one byte is 8 bits
+    if DEBUG == 1:
+      log("received " + seq + "th " + str(len(payload)*8) + 
+        " bits. in total " + str(totallen) + " bits\n")
+
+    # calc throughput
+    endtime = getruntime()
+    duration = endtime - starttime
+    if duration >= 1.0:
+      throughput = float(totallen)/duration/1000000
+      starttime = getruntime()  # reset clock
+      totallen = 0
+      log("throughput: " + str(throughput) + " Mbps\n")
+
+    # send back ack!
+    ack = seq 
+    sendmessage(destip, destport, ack, localip, localport)
+
+    
