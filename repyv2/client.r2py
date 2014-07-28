@@ -73,7 +73,7 @@ while True:
       log("received " + seq + "th " + str(len(payload)*8) + 
         " bits. in total " + str(totallen) + " bits\n")
 
-    # calc throughput
+    # calc throughput and get movement hint
     endtime = getruntime()
     duration = endtime - starttime
     if duration >= 1.0:
@@ -81,9 +81,11 @@ while True:
       starttime = getruntime()  # reset clock
       totallen = 0
       log("throughput: " + str(throughput) + " Mbps\n")
+      move = getmovement()
+      ack = seq + "|" + str(move)
+    else:
+      ack = seq
 
-    # send back ack!
-    ack = seq 
+    # send back ack!     
     sendmessage(destip, destport, ack, localip, localport)
 
-    
