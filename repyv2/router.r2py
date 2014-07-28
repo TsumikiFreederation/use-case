@@ -15,7 +15,7 @@
 ############ define protocol parameters ############ 
 LENGTH = 9000    # packet length (change for different tx rates)
 SEQ = 0          # sequence number of packets
-WIN = 100     # check packet loss every WIN ack
+WIN = 300     # check packet loss every WIN ack
 DEBUG = 1     # output some debug messages if DEBUG == 1
 
 def getlocalipport():
@@ -37,21 +37,18 @@ def recvack(routerlistensocket, sequence):
       try:
         # receive ack and movement hint from client
         remoteip, remoteport, message = routerlistensocket.getmessage()
- 
-        try: 
-          if DEBUG == 1:
+
+        if DEBUG == 1:
             log("received " + str(message) + "th packet. ")
 
-          #seqlock.acquire(True)  
+        try:   
           sequence.remove(int(message))
-          #seqlock.release()
-
-          if DEBUG == 1:
-            log("received seq queue: " + str(sequence) + "\n")
-
         except ValueError:
           log(message + " not in the sequence of pkts sent.\n")
           pass
+
+        if DEBUG == 1:
+          log("received seq queue: " + str(sequence) + "\n")
 
       except SocketWouldBlockError:
         pass
@@ -79,11 +76,9 @@ createthread(recvack(routerlistensocket, sequence))
 while True:
   # router send a bunch of packets to the client
   packet = [SEQ, '0'*LENGTH]
-  sendmessage(destip, destport, str(packet), localip, localport)
-  
-  #seqlock.acquire(True)
   sequence.append(SEQ)  # record the sent seq
-  #seqlock.release()
+
+  sendmessage(destip, destport, str(packet), localip, localport)
 
   if DEBUG == 1:
     log("sending " + str(SEQ) + "th packet. sending seq queue: " + str(sequence) + "\n")

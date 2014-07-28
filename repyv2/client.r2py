@@ -46,7 +46,7 @@ def getmovement():
 
 ############ main program ############
 
-DEBUG = 1  # output some debug messages if DEBUG == 1
+DEBUG = 0  # output some debug messages if DEBUG == 1
 
 (localip, localport) = getlocalipport()
 (destip, destport) = getdestipport()
