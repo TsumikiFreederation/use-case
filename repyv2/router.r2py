@@ -69,7 +69,7 @@ def recvack(routerlistensocket, sequence, recentobservedRTTs):
             for (id, sendtime) in sequence.iteritems():
               if sendtime < getruntime() - estimateRTT(recentobservedRTTs):
                 log(str(id) + "th packet too old.. delete\n")
-                del sequence[int(seq)]
+                del sequence[id]
                 
         except KeyError:
           log(seq + " not in the sequence of pkts sent.\n")
