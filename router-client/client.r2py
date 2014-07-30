@@ -77,7 +77,7 @@ while True:
     endtime = getruntime()
     duration = endtime - starttime
     if duration >= 1.0:
-      throughput = float(totallen)/duration/1000000
+      throughput = float(totallen)/(duration)/1000000
       starttime = getruntime()  # reset clock
       totallen = 0
       log("throughput: " + str(throughput) + " Mbps\n")

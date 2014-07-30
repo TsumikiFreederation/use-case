@@ -74,10 +74,11 @@ def recvack(routerlistensocket, sequence):
 def checkRTT(RTT, sequence):
 
   def rtt():
+    log("in checkRTT: RTT over last " + str(WIN) + " packets: " + str(RTT[0]) + ' s.\n')
     for s in sequence:
-      if getruntime() > s[1] + RTT: # timeout
-        sequence.remove(t)
-        # TODO: not remove, but signal loss instead
+      if getruntime() > s[1] + RTT[0]: # timeout
+        # TODO: signal packet loss 
+        log(str(s) + " timeout!\n")
 
   return rtt
 
@@ -93,7 +94,7 @@ routerlistensocket = listenformessage(localip, localport)
 # initial variables
 starttime = getruntime()
 sequence = []
-RTT = 0
+RTT = [0.1]  # initially set to a large value
 
 # thread that receives acks
 createthread(recvack(routerlistensocket, sequence))
@@ -112,8 +113,8 @@ while True:
   if SEQ != 0 and SEQ % WIN == 0:  # the first two WINs are warm up
     # check pkt loss   
     sumrtts = getruntime() - starttime
-    RTT = (sumrtts/WIN)*1000
-    log("RTT over last " + str(WIN) + " packets: " + str(RTT) + 'ms.\n')
+    RTT = sumrtts/WIN
+    #log("RTT over last " + str(WIN) + " packets: " + str(RTT[0]) + ' sec.\n')
 
   SEQ = SEQ + 1
   starttime = getruntime()
