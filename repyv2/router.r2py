@@ -13,10 +13,10 @@
 """
 
 ############ define protocol parameters ############ 
-LENGTH = 9000    # packet length (change for different tx rates)
-SEQ = 0          # sequence number of packets
-WIN = 300     # check packet loss every WIN ack
-DEBUG = 1     # output some debug messages if DEBUG == 1
+LENGTH = 9200    # packet length (change for different tx rates)
+SEQ = 1          # sequence number of packets, starting from 1
+WIN = 10     # check packet loss every WIN ack
+DEBUG = 0     # output some debug messages if DEBUG == 1
 
 
 def getlocalipport():
@@ -49,25 +49,37 @@ def recvack(routerlistensocket, sequence):
         remoteip, remoteport, message = routerlistensocket.getmessage()
         (seq, move) = translatemessage(message)
 
-        if DEBUG == 1:
-          if move != None:
-            log("received " + seq + "th packet. movement: " + move + "\n")
-          else:
-            log("received " + seq + "th packet. no movement.\n")
-
         try:   
-          sequence.remove(int(seq))
+          for t in sequence:
+            if t[0] == int(seq): 
+              sequence.remove(t)
+              break
         except ValueError:
           log(seq + " not in the sequence of pkts sent.\n")
           pass
 
         if DEBUG == 1:
-          log("after receive, seq queue: " + str(sequence) + "\n")
+          if move != None:
+            log("received " + seq + "th packet. movement: " + move + "\n")
+          else:
+            log("received " + seq + "th packet. no movement.\n")
+          log("after received " + seq + "th packet, seq queue: " + str(sequence) + "\n")
 
       except SocketWouldBlockError:
         pass
 
   return ack
+
+
+def checkRTT(RTT, sequence):
+
+  def rtt():
+    for s in sequence:
+      if getruntime() > s[1] + RTT: # timeout
+        sequence.remove(t)
+        # TODO: not remove, but signal loss instead
+
+  return rtt
 
 
 ############ main program ############ 
@@ -81,24 +93,27 @@ routerlistensocket = listenformessage(localip, localport)
 # initial variables
 starttime = getruntime()
 sequence = []
+RTT = 0
 
 # thread that receives acks
 createthread(recvack(routerlistensocket, sequence))
-
+createthread(checkRTT(RTT, sequence))
 
 while True:
   # router send a bunch of packets to the client
   packet = [SEQ, '0'*LENGTH]
-  sequence.append(SEQ)  # record the sent seq
+  sequence.append((SEQ, getruntime()))  # record the sent seq and time
 
   sendmessage(destip, destport, str(packet), localip, localport)
 
   if DEBUG == 1:
     log("sending " + str(SEQ) + "th packet. sending seq queue: " + str(sequence) + "\n")
 
-  if SEQ != 0 and SEQ % WIN == 0:
+  if SEQ != 0 and SEQ % WIN == 0:  # the first two WINs are warm up
     # check pkt loss   
-    sleep(0.5)  # wait for outstanding pkt to arrive
-    log("lost seqs: " + str(sequence) + '\n')
+    sumrtts = getruntime() - starttime
+    RTT = (sumrtts/WIN)*1000
+    log("RTT over last " + str(WIN) + " packets: " + str(RTT) + 'ms.\n')
 
   SEQ = SEQ + 1
+  starttime = getruntime()
