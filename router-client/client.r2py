@@ -22,7 +22,7 @@ def getlocalipport():
 
 
 def getdestipport():
-  destip = getmyip()  # this needs to be changed to router IP
+  destip = getmyip()  # TODO: this needs to be router's IP
   destport = 63100
   return (destip, destport)
 
@@ -35,6 +35,7 @@ def processpacket(packet):
 
 
 def getmovement():
+  # TODO: replace this with Thomas's code
   flip = randomfloat()
   if flip > 0.5:
     amimove = 1
@@ -47,6 +48,7 @@ def getmovement():
 ############ main program ############
 
 DEBUG = 0  # output some debug messages if DEBUG == 1
+           # TODO: make this a command line arg
 
 (localip, localport) = getlocalipport()
 (destip, destport) = getdestipport()
@@ -56,31 +58,33 @@ phonelistensocket = listenformessage(localip, localport)
 ack = ''
 packet = ''
 totallen = 0   # record total bytes received
-starttime = getruntime()
+totaltime = 0
 
 while True:
+  starttime = getruntime()  # reset clock
   try:
     remoteip, remoteport, packet = phonelistensocket.getmessage()
     endtime = getruntime()
+    getmessagetime = endtime - starttime
+    
+    if DEBUG == 1:
+      log("received " + seq + "th packet.\n")
+      
   except SocketWouldBlockError:
     pass
 
-  if packet != '':  # when we received data
+  if packet != '':  # when we received real data
     (seq, payload) = processpacket(packet)
-    packet = ''
-    totallen = totallen + len(payload)*8  # one byte is 8 bits
-    if DEBUG == 1:
-      log("received " + seq + "th " + str(len(payload)*8) + 
-        " bits. in total " + str(totallen) + " bits\n")
+    totallen = totallen + len(packet)*8  # 1 byte = 8 bits
+    totaltime = totaltime + getmessagetime
+    packet = '' 
 
-    # calc throughput and get movement hint
-    endtime = getruntime()
-    duration = endtime - starttime
-    if duration >= 1.0:
-      throughput = float(totallen)/(duration)/1000000
-      starttime = getruntime()  # reset clock
-      totallen = 0
-      log("throughput: " + str(throughput) + " Mbps\n")
+    if totaltime > 0.1:
+      # check throughput and movement every 100 ms
+      throughput = float(totallen)/(totaltime)/1000000 
+      log("recv rate: " + str(throughput) + " Mbps\n")
+      totaltime = 0
+      totallen = 0 
       move = getmovement()
       ack = seq + "|" + str(move)
     else:
@@ -88,4 +92,3 @@ while True:
 
     # send back ack!     
     sendmessage(destip, destport, ack, localip, localport)
-

@@ -13,11 +13,12 @@
 """
 
 ############ define protocol parameters ############ 
-LENGTH = 9200    # packet length (change for different tx rates)
+LENGTH = 2000    # packet length (change for different tx rates)
 SEQ = 1          # sequence number of packets, starting from 1
 WIN = 10     # check packet loss every WIN ack
-DEBUG = 1     # output some debug messages if DEBUG == 1
-
+DEBUG = 0     # output some debug messages if DEBUG == 1 
+              # TODO: make this a command line arg
+              
 
 def getlocalipport():
   localip = getmyip()
@@ -26,7 +27,7 @@ def getlocalipport():
 
 
 def getdestipport():
-  destip = getmyip()  # this needs to be changed to phone's IP
+  destip = getmyip()  # TODO: this needs to be a phone's IP
   destport = 63101
   return (destip, destport)
 
@@ -41,8 +42,8 @@ def translatemessage(message):
 
 
 def estimateRTT(recentobservedRTTs):
-  # return twice the max value of recent RTTs
-  return max(recentobservedRTTs)*2
+  # return the max value of recent RTTs
+  return max(recentobservedRTTs)
 
 
 def recvack(routerlistensocket, sequence, recentobservedRTTs):
@@ -54,36 +55,28 @@ def recvack(routerlistensocket, sequence, recentobservedRTTs):
         # receive ack and movement hint from client
         remoteip, remoteport, message = routerlistensocket.getmessage()
         recvtime = getruntime()
-        (seq, move) = translatemessage(message)
+        (seq, move) = translatemessage(message)  # TODO: use movement info
+             
+        if int(seq) in sequence:  
+          # delete seq upon ack
+          sendtime = sequence[int(seq)]
+          del sequence[int(seq)]
+          rtt = recvtime - sendtime
+          if DEBUG == 1:
+            log(seq + "th pkt received. send time: " + str(sendtime) + 
+                "  receive time: " + str(recvtime) + "  rtt: " + str(rtt) 
+                + ". seq queue: " + str(sequence) + "\n") 
 
-        try:   
-          if int(seq) in sequence:  # delete seq upon ack
-            sendtime = sequence[int(seq)]
-            del sequence[int(seq)]
-            log(seq + "th pkt send time: " + str(sendtime) + "  receive time: " + str(recvtime) + "\n")
-            rtt = recvtime - sendtime
-            recentobservedRTTs.append(rtt)
-            if len(recentobservedRTTs) > WIN: # update RTT for every WIN packets
-              recentobservedRTTs.pop(0)
+          recentobservedRTTs.append(rtt)
+          if len(recentobservedRTTs) > WIN: 
+            # update RTT for every WIN packets
+            recentobservedRTTs.pop(0)
 
-            for (id, sendtime) in sequence.iteritems():
-              if sendtime < getruntime() - estimateRTT(recentobservedRTTs):
-                log(str(id) + "th packet too old.. delete\n")
-                del sequence[id]
-                
-        except KeyError:
-          log(seq + " not in the sequence of pkts sent.\n")
-          pass
-        
-
-        if DEBUG == 1:
-          if move != None:
-            log("received " + seq + "th packet. movement: " + move + "\n")
-          else:
-            log("received " + seq + "th packet. no movement.\n")
-          log("after received " + seq + "th packet, seq queue: " + str(sequence) + "\n")
-          
-        log("recentobservedRTTs: " + str(recentobservedRTTs) + "\n\n")
+          if DEBUG == 1:
+            log("recentobservedRTTs: " + str(recentobservedRTTs) + "\n\n")
+            
+        else:
+          log(seq + "th pkt is received before sent, or has been deleted due to timeout.\n")                
 
       except SocketWouldBlockError:
         pass
@@ -91,14 +84,35 @@ def recvack(routerlistensocket, sequence, recentobservedRTTs):
   return ack
 
 
-def checkRTT(RTT, sequence):
+def checkRTT(recentobservedRTTs, sequence):
 
   def rtt():
-    log("in checkRTT: RTT over last " + str(WIN) + " packets: " + str(RTT) + ' s.\n')
-    for s in sequence:
-      if getruntime() > s[1] + RTT: # timeout
-        # TODO: signal packet loss 
-        log(str(s) + " timeout!\n")
+
+    while True:
+      if len(recentobservedRTTs) < WIN: # need at least WIN pkts
+        continue 
+
+      delseq = []
+      updatedRTT = estimateRTT(recentobservedRTTs)
+      for (id, sendtime) in sequence.items():
+        if sendtime < getruntime() - updatedRTT*2:
+          if DEBUG == 1:
+            log(str(id) + "th packet too old.. delete\n")
+          delseq.append(id)
+
+      for i in delseq:
+        try:
+          del sequence[i]
+        except KeyError:
+          # at this point, previously recorded id could already  
+          # be deleted by the recvack thread
+          log(str(i) + "th not in the sequence (already received?).\n")
+          pass
+
+      if DEBUG == 1:
+        log("after checkRTT, sequence: " + str(sequence) + "\n")
+
+      sleep(updatedRTT*2)
 
   return rtt
 
@@ -115,21 +129,26 @@ routerlistensocket = listenformessage(localip, localport)
 starttime = getruntime()
 sequence = {}
 recentobservedRTTs = []  # initially set to a large value
-sequencelock = createlock()
+totallen = 0   # record total bytes received
+totaltime = 0
 
 # thread that receives acks
 createthread(recvack(routerlistensocket, sequence, recentobservedRTTs))
-#createthread(checkRTT(recentobservedRTTs, sequence))
+createthread(checkRTT(recentobservedRTTs, sequence))
 
-while True:
-  # router send a bunch of packets to the client
-  packet = [SEQ, '0'*LENGTH]
+while True: 
+  # router sends a bunch of packets to the client
+  packet = [SEQ, '0'*LENGTH]  
   sequence[SEQ] = getruntime()  # record (seq, sendtime)
-
+  
+  if DEBUG == 1:
+    log("sending " + str(SEQ) + "th packet. sending sequence: " 
+        + str(sequence) + "\n")
+  
   sendmessage(destip, destport, str(packet), localip, localport)
 
-  if DEBUG == 1:
-    log("sending " + str(SEQ) + "th packet. sending seq queue: " + str(sequence) + "\n")
+  if recentobservedRTTs != []:
+    sleep(estimateRTT(recentobservedRTTs))
 
   SEQ = SEQ + 1
-  starttime = getruntime()
+
