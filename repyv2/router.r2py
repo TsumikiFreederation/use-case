@@ -14,25 +14,17 @@
 
 ############ define protocol parameters ############ 
 LENGTH = 2000    # packet length (change for different tx rates)
-SEQ = 1          # sequence number of packets, starting from 1
-WIN = 10     # check packet loss every WIN ack
-DEBUG = 0     # output some debug messages if DEBUG == 1 
+sequenceno = 1   # sequence number of packets, starting from 1
+WIN = 10      # check packet loss every WIN ack
+DEBUG = 1     # output some debug messages if DEBUG == 1 
               # TODO: make this a command line arg
-              
+            
 
-def getlocalipport():
-  localip = getmyip()
-  localport = 63100
-  return (localip, localport)
-
-
-def getdestipport():
-  destip = getmyip()  # TODO: this needs to be a phone's IP
-  destport = 63101
-  return (destip, destport)
-
-
-def translatemessage(message):
+def deserialize(message):
+      
+  """
+  Returns the sequence of the packet, and movement hint.
+  """
   if "|" in message:
     seq, move = message.split("|")
   else:
@@ -42,38 +34,66 @@ def translatemessage(message):
 
 
 def estimateRTT(recentobservedRTTs):
-  # return the max value of recent RTTs
+
+  """
+  Returns the max value of recent RTTs
+  """
   return max(recentobservedRTTs)
 
 
-def recvack(routerlistensocket, sequence, recentobservedRTTs):
+def logifdebug(DEBUG, string):
 
+  """
+  Prints out string if DEBUG == 1.
+  """
+  if DEBUG == 1:
+    log(string + '\n')
+  else: 
+    return 
+  
+
+def recvack(routerlistensocket, packetsequence, recentobservedRTTs):
+
+  """
+  A closure that receives ack from the receiver, removes it from 
+  packetsequence, and update the recently observed RTT
+  """
+  
   def ack(): 
+      
+    """
+    Inside of the closure
+    """
 
     while True:
       try:
         # receive ack and movement hint from client
         remoteip, remoteport, message = routerlistensocket.getmessage()
         recvtime = getruntime()
-        (seq, move) = translatemessage(message)  # TODO: use movement info
+        (seq, move) = deserialize(message)  # TODO: use movement info 
              
-        if int(seq) in sequence:  
+        if int(seq) in packetsequence:
+          sendtime = packetsequence[int(seq)]
           # delete seq upon ack
-          sendtime = sequence[int(seq)]
-          del sequence[int(seq)]
-          rtt = recvtime - sendtime
-          if DEBUG == 1:
-            log(seq + "th pkt received. send time: " + str(sendtime) + 
+          try:
+            del packetsequence[int(seq)]           
+            # if del throws KeyError, the rest from here in the try block will be skipped
+            rtt = recvtime - sendtime
+            logifdebug(DEBUG, seq + "th pkt received. send time: " + str(sendtime) + 
                 "  receive time: " + str(recvtime) + "  rtt: " + str(rtt) 
-                + ". seq queue: " + str(sequence) + "\n") 
+                + ". seq queue: " + str(packetsequence)) 
 
-          recentobservedRTTs.append(rtt)
-          if len(recentobservedRTTs) > WIN: 
-            # update RTT for every WIN packets
-            recentobservedRTTs.pop(0)
+            # update RTT
+            recentobservedRTTs.append(rtt)
+            if len(recentobservedRTTs) > WIN: # only keep WIN most recent RTTs
+              recentobservedRTTs.pop(0)
 
-          if DEBUG == 1:
-            log("recentobservedRTTs: " + str(recentobservedRTTs) + "\n\n")
+            logifdebug(DEBUG, "recentobservedRTTs: " + str(recentobservedRTTs) + "\n")
+              
+          except KeyError:
+            # at this point, checkRTT thread could delete this packet
+            log(seq + "th not in the sequence (already timeout?).\n")
+            pass
             
         else:
           log(seq + "th pkt is received before sent, or has been deleted due to timeout.\n")                
@@ -84,33 +104,42 @@ def recvack(routerlistensocket, sequence, recentobservedRTTs):
   return ack
 
 
-def checkRTT(recentobservedRTTs, sequence):
+def expiresentpackets(recentobservedRTTs, packetsequence):
 
+  """
+  A closure that checks if a packet in packetsequence has
+  timed out.
+  """
+  
   def rtt():
 
+    """
+    Inside of the closure
+    """
+  
     while True:
       if len(recentobservedRTTs) < WIN: # need at least WIN pkts
         continue 
 
       delseq = []
       updatedRTT = estimateRTT(recentobservedRTTs)
-      for (id, sendtime) in sequence.items():
+      for (id, sendtime) in packetsequence.items():
         if sendtime < getruntime() - updatedRTT*2:
-          if DEBUG == 1:
-            log(str(id) + "th packet too old.. delete\n")
+          # if a packet was sent more than twice 
+          # RTT ago, then it's considered timed out
+          logifdebug(DEBUG, str(id) + "th packet too old...need to delete")
           delseq.append(id)
 
       for i in delseq:
         try:
-          del sequence[i]
+          del packetsequence[i]
         except KeyError:
           # at this point, previously recorded id could already  
           # be deleted by the recvack thread
           log(str(i) + "th not in the sequence (already received?).\n")
           pass
 
-      if DEBUG == 1:
-        log("after checkRTT, sequence: " + str(sequence) + "\n")
+      logifdebug(DEBUG, "after checkRTT, sequence: " + str(packetsequence))
 
       sleep(updatedRTT*2)
 
@@ -119,36 +148,45 @@ def checkRTT(recentobservedRTTs, sequence):
 
 ############ main program ############ 
 
-(localip, localport) = getlocalipport()
-(destip, destport) = getdestipport()
+(localip, localport) = (getmyip(), 63100)
+(destip, destport) = (getmyip(), 63101)  # TODO: this needs to be phone's IP
 
 # router's socket for client's ack
 routerlistensocket = listenformessage(localip, localport)
 
 # initial variables
 starttime = getruntime()
-sequence = {}
+packetsequence = {}
 recentobservedRTTs = []  # initially set to a large value
 totallen = 0   # record total bytes received
 totaltime = 0
 
-# thread that receives acks
-createthread(recvack(routerlistensocket, sequence, recentobservedRTTs))
-createthread(checkRTT(recentobservedRTTs, sequence))
+# thread that receives ack from the receiver, removes it from 
+# packetsequence, and update the recently observed RTT
+createthread(recvack(routerlistensocket, packetsequence, recentobservedRTTs))
+
+# thread that checks if a packet in packetsequence has timed out.
+createthread(expiresentpackets(recentobservedRTTs, packetsequence))
 
 while True: 
   # router sends a bunch of packets to the client
-  packet = [SEQ, '0'*LENGTH]  
-  sequence[SEQ] = getruntime()  # record (seq, sendtime)
+  packet = str(sequenceno) + "|" + '0'*LENGTH 
+  packetsequence[sequenceno] = getruntime()  # record (seq, sendtime)
   
-  if DEBUG == 1:
-    log("sending " + str(SEQ) + "th packet. sending sequence: " 
-        + str(sequence) + "\n")
+  logifdebug(DEBUG, "sending " + str(sequenceno) + "th packet. sending sequence: " 
+    + str(packetsequence))
   
   sendmessage(destip, destport, str(packet), localip, localport)
 
+  # ib: So, you are basically doing stop-and-wait by sleeping below. You
+  # are waiting for each ack before sending the next packet. This is
+  # safe (i.e., only one data packet in the pipe at a time), but highly
+  # inefficient. You want to saturate the pipe by sending a preset
+  # window of packets in each RTT, and change the window based on
+  # observed loss.
+ 
   if recentobservedRTTs != []:
     sleep(estimateRTT(recentobservedRTTs))
 
-  SEQ = SEQ + 1
+  sequenceno = sequenceno + 1
 

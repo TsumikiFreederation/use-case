@@ -40,6 +40,16 @@ def getmovement():
   return amimove
 
 
+def logifdebug(DEBUG, string):
+
+  """
+  Prints out string if DEBUG == 1.
+  """
+  if DEBUG == 1:
+    log(string + '\n')
+  else: 
+    return 
+  
 
 ############ main program ############
 
@@ -63,15 +73,13 @@ while True:
     remoteip, remoteport, packet = phonelistensocket.getmessage()
     endtime = getruntime()
     getmessagetime = endtime - starttime
-    
-    if DEBUG == 1:
-      log("received " + seq + "th packet.\n")
       
   except SocketWouldBlockError:
     pass
 
   if packet != '':  # when we received real data
     (seq, payloadlen) = deserializepacket(packet)
+    logifdebug(DEBUG, "received " + seq + "th packet.\n")
     totalbits = totalbits + payloadlen  
     totaltime = totaltime + getmessagetime
     packet = '' 
