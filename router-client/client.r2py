@@ -12,29 +12,38 @@
   A smartphone acts as a client that reports to router its movement.
 """
 
+# ib: explain why you need this in a comment
 dy_import_module_symbols('random.r2py')
 
 
 def getlocalipport():
+# ib: missing function comment -- why not just define the tuple at top-level without a fn?
   localip = getmyip()
   localport = 63101
   return (localip, localport)
 
 
 def getdestipport():
+# ib: missing function comment -- why not just define the tuple at top-level without a fn?
   destip = getmyip()  # TODO: this needs to be router's IP
   destport = 63100
   return (destip, destport)
 
 
 def processpacket(packet):
+# ib: missing function comment -- deserialize is a better name for this.
+# ib: why do you brackets around the content, can just omit this.
   content = packet.strip('[').strip(']')
   seq, payload = content.split(',')
+# ib: why do you need quotes around the payload? does payload even
+# matter? I think you only care about the length of the payload, not
+# the payload itself.
   payload = payload.strip().strip('\'')
   return (seq, payload)
 
 
 def getmovement():
+# ib: missing function comment
   # TODO: replace this with Thomas's code
   flip = randomfloat()
   if flip > 0.5:
@@ -55,8 +64,11 @@ DEBUG = 0  # output some debug messages if DEBUG == 1
 
 phonelistensocket = listenformessage(localip, localport)
 
+# ib: what do these variables represent? Have a comment for each one that explains this.
 ack = ''
 packet = ''
+# ib: total bytes received ever, or total bytes received in the last UDP packet?
+# ib: why not name it totalbytes -- len is ambiguous.
 totallen = 0   # record total bytes received
 totaltime = 0
 
@@ -65,6 +77,10 @@ while True:
   try:
     remoteip, remoteport, packet = phonelistensocket.getmessage()
     endtime = getruntime()
+
+# ib: this quantity is confusing to me -- what does it represent? It
+# seems like you're only using this for calculating throughput every
+# 100ms, in which case you can simplify this (see below).
     getmessagetime = endtime - starttime
     
     if DEBUG == 1:
@@ -75,9 +91,16 @@ while True:
 
   if packet != '':  # when we received real data
     (seq, payload) = processpacket(packet)
+    # ib: If you are sending ASCII chars across (packet is of type
+    # string) then each char is already 1 byte. Why are you multiplying by 8?
     totallen = totallen + len(packet)*8  # 1 byte = 8 bits
     totaltime = totaltime + getmessagetime
     packet = '' 
+
+# ib: why is totaltime computed using getmessagetime above? Isn't it
+# simply a timer that must trigger every 100ms independently of
+# anything else? In which case you'd simply want to do something like:
+#    if (getruntime() - lastThrougputPrintTime) > 0.1:
 
     if totaltime > 0.1:
       # check throughput and movement every 100 ms

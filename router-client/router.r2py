@@ -14,6 +14,9 @@
 
 ############ define protocol parameters ############ 
 LENGTH = 2000    # packet length (change for different tx rates)
+
+# ib: SEQ changes below, so it is not a constant. Don't use CAPS if the variable is not constant.
+
 SEQ = 1          # sequence number of packets, starting from 1
 WIN = 10     # check packet loss every WIN ack
 DEBUG = 0     # output some debug messages if DEBUG == 1 
@@ -21,18 +24,21 @@ DEBUG = 0     # output some debug messages if DEBUG == 1
               
 
 def getlocalipport():
+# ib: missing function comment -- why not just define the tuple at top-level without a fn?
   localip = getmyip()
   localport = 63100
   return (localip, localport)
 
 
 def getdestipport():
+# ib: missing function comment -- why not just define the tuple at top-level without a fn?
   destip = getmyip()  # TODO: this needs to be a phone's IP
   destport = 63101
   return (destip, destport)
 
 
 def translatemessage(message):
+# ib: missing function comment -- deserialize might be a better name for this.
   if "|" in message:
     seq, move = message.split("|")
   else:
@@ -42,14 +48,18 @@ def translatemessage(message):
 
 
 def estimateRTT(recentobservedRTTs):
-  # return the max value of recent RTTs
+  """
+  Returns the max value of passed in RTT values.
+  """
   return max(recentobservedRTTs)
 
 
 def recvack(routerlistensocket, sequence, recentobservedRTTs):
+# ib: missing function comment
+# ib: sequence is poor var name -- sequence of what?
 
   def ack(): 
-
+#ib: missing function comment
     while True:
       try:
         # receive ack and movement hint from client
@@ -62,6 +72,9 @@ def recvack(routerlistensocket, sequence, recentobservedRTTs):
           sendtime = sequence[int(seq)]
           del sequence[int(seq)]
           rtt = recvtime - sendtime
+
+          # ib: since you use if DEBUG == 1: log(blah) multiple times,
+          # refactor this into a method like logifdebug(blah)
           if DEBUG == 1:
             log(seq + "th pkt received. send time: " + str(sendtime) + 
                 "  receive time: " + str(recvtime) + "  rtt: " + str(rtt) 
@@ -69,6 +82,10 @@ def recvack(routerlistensocket, sequence, recentobservedRTTs):
 
           recentobservedRTTs.append(rtt)
           if len(recentobservedRTTs) > WIN: 
+
+            # ib: pop(0) doesn't really update the RTT -- it just
+            # removes an old RTT from the list..
+
             # update RTT for every WIN packets
             recentobservedRTTs.pop(0)
 
@@ -85,9 +102,12 @@ def recvack(routerlistensocket, sequence, recentobservedRTTs):
 
 
 def checkRTT(recentobservedRTTs, sequence):
+# ib: add comment -- what does this do?
+# ib: this needs a better name, something that reflects what this
+# done. Like expireSentPackets or the like.
 
   def rtt():
-
+# ib: add comment -- what does this do?
     while True:
       if len(recentobservedRTTs) < WIN: # need at least WIN pkts
         continue 
@@ -95,7 +115,8 @@ def checkRTT(recentobservedRTTs, sequence):
       delseq = []
       updatedRTT = estimateRTT(recentobservedRTTs)
       for (id, sendtime) in sequence.items():
-        if sendtime < getruntime() - updatedRTT*2:
+# ib: explain this in a comment
+        if sendtime < (getruntime() - updatedRTT*2):
           if DEBUG == 1:
             log(str(id) + "th packet too old.. delete\n")
           delseq.append(id)
@@ -133,11 +154,14 @@ totallen = 0   # record total bytes received
 totaltime = 0
 
 # thread that receives acks
+# ib: and does what with them?
 createthread(recvack(routerlistensocket, sequence, recentobservedRTTs))
+# ib: thread that checks RTT..?
 createthread(checkRTT(recentobservedRTTs, sequence))
 
 while True: 
   # router sends a bunch of packets to the client
+  # ib: '0' is a char, so you are definitely sending bytes, not bits.
   packet = [SEQ, '0'*LENGTH]  
   sequence[SEQ] = getruntime()  # record (seq, sendtime)
   
@@ -147,6 +171,13 @@ while True:
   
   sendmessage(destip, destport, str(packet), localip, localport)
 
+# ib: So, you are basically doing stop-and-wait by sleeping below. You
+# are waiting for each ack before sending the next packet. This is
+# safe (i.e., only one data packet in the pipe at a time), but highly
+# inefficient. You want to saturate the pipe by sending a preset
+# window of packets in each RTT, and change the window based on
+# observed loss.
+ 
   if recentobservedRTTs != []:
     sleep(estimateRTT(recentobservedRTTs))
 
