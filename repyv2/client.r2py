@@ -12,29 +12,25 @@
   A smartphone acts as a client that reports to router its movement.
 """
 
+# need this library for random number generation
+# will be removed after adding Thomas's code
 dy_import_module_symbols('random.r2py')
 
 
-def getlocalipport():
-  localip = getmyip()
-  localport = 63101
-  return (localip, localport)
-
-
-def getdestipport():
-  destip = getmyip()  # TODO: this needs to be router's IP
-  destport = 63100
-  return (destip, destport)
-
-
-def processpacket(packet):
-  content = packet.strip('[').strip(']')
-  seq, payload = content.split(',')
-  payload = payload.strip().strip('\'')
-  return (seq, payload)
+def deserializepacket(packet):
+    
+  """
+  Returns the sequence of the packet, and payload length in bits.
+  """
+  seq, payload = packet.split("|")
+  return (seq, len(payload)*8)  # 1 byte = 8 bits
 
 
 def getmovement():
+    
+  """
+  Returns the user holding this phone is moving or not.
+  """    
   # TODO: replace this with Thomas's code
   flip = randomfloat()
   if flip > 0.5:
@@ -49,16 +45,17 @@ def getmovement():
 
 DEBUG = 0  # output some debug messages if DEBUG == 1
            # TODO: make this a command line arg
+CYCLE = 0.1
 
-(localip, localport) = getlocalipport()
-(destip, destport) = getdestipport()
+(localip, localport) = (getmyip(), 63101)
+(destip, destport) = (getmyip(), 63100) # TODO: this needs to be router's IP
 
 phonelistensocket = listenformessage(localip, localport)
 
-ack = ''
-packet = ''
-totallen = 0   # record total bytes received
-totaltime = 0
+ack = ''       # string for sending back ack
+packet = ''    # string for received packet on phonelistensocket
+totalbits = 0   # record total bits received over a CYCLE 
+totaltime = 0   # record total time spent over a CYCLE 
 
 while True:
   starttime = getruntime()  # reset clock
@@ -74,17 +71,17 @@ while True:
     pass
 
   if packet != '':  # when we received real data
-    (seq, payload) = processpacket(packet)
-    totallen = totallen + len(packet)*8  # 1 byte = 8 bits
+    (seq, payloadlen) = deserializepacket(packet)
+    totalbits = totalbits + payloadlen  
     totaltime = totaltime + getmessagetime
     packet = '' 
 
-    if totaltime > 0.1:
+    if totaltime > CYCLE:
       # check throughput and movement every 100 ms
-      throughput = float(totallen)/(totaltime)/1000000 
+      throughput = float(totalbits)/(totaltime)/1000000 
       log("recv rate: " + str(throughput) + " Mbps\n")
       totaltime = 0
-      totallen = 0 
+      totalbits = 0 
       move = getmovement()
       ack = seq + "|" + str(move)
     else:
