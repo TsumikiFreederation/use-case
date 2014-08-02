@@ -22,7 +22,7 @@ def deserializepacket(packet):
   Returns the sequence of the packet, and payload length in bits.
   """
   seq, payload = packet.split("|")
-  return (seq, len(payload)*8)  # 1 byte = 8 bits
+  return (seq, len(packet)*8)  # 1 byte = 8 bits
 
 
 def getmovement():    
@@ -62,7 +62,7 @@ phonelistensocket = listenformessage(localip, localport)
 ack = ''       # string for sending back ack
 packet = ''    # string for received packet on phonelistensocket
 totalbits = 0   # record total bits received over a CYCLE 
-lastchecktime = 0   # record total time spent over a CYCLE 
+lastchecktime = getruntime()   # record total time spent over a CYCLE 
 
 while True: 
   try:

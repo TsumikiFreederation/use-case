@@ -13,15 +13,17 @@
 """
 
 ############ define protocol parameters ############ 
-LENGTH = 2000    # packet length (change for different tx rates)
-sequenceno = 1   # sequence number of packets, starting from 1
-WIN = 10      # check packet loss every WIN ack
-DEBUG = 1     # output some debug messages if DEBUG == 1 
-              # TODO: make this a command line arg
-            
+LENGTH = 1000    # packet length (change for different tx rates)
+RTTWIN = 10      # check packet loss every RTTWIN ack
+WIN = 1000        # window size to check for sending rate
+sequenceno = 1   # sequence number of packets, starting from 1 to WIN
 
-def deserialize(message):
-      
+DEBUG = 0     # output some debug messages if DEBUG == 1 
+              # TODO: make this a command line arg
+CYCLE = 1  # time duration to calculate throughput
+
+
+def deserialize(message):      
   """
   Returns the sequence of the packet, and movement hint.
   """
@@ -34,7 +36,6 @@ def deserialize(message):
 
 
 def estimateRTT(recentobservedRTTs):
-
   """
   Returns the max value of recent RTTs
   """
@@ -42,7 +43,6 @@ def estimateRTT(recentobservedRTTs):
 
 
 def logifdebug(DEBUG, string):
-
   """
   Prints out string if DEBUG == 1.
   """
@@ -50,17 +50,63 @@ def logifdebug(DEBUG, string):
     log(string + '\n')
   else: 
     return 
-  
 
-def recvack(routerlistensocket, packetsequence, recentobservedRTTs):
 
+def delfromseqrange(seq, seqrange):
+  """
+  Delete seq from the sequence range. Add new range if necessary.
+  """
+  for subrange in seqrange:
+      
+    index = seqrange.index(subrange)
+
+    if len(subrange) == 1:
+        if seq == subrange[0]:
+          seqrange.remove(subrange)  
+    else:
+      left, right = subrange
+ 
+      if right >= seq:
+        seqrange.remove(subrange)
+        
+        if right == seq:  # change to [left, right-1]        
+          if left == right-1:
+            seqrange.insert(index, [left])
+          else:
+            seqrange.insert(index, [left, right-1])
+          
+        else: # right > seq
+          if left == seq:  # change to [left+1, right]
+            if left+1 == right:
+              seqrange.insert(index, [left+1])
+            else:
+              seqrange.insert(index, [left+1, right])
+          else: # left < seq < right: 
+                # change to [left, seq-1], [seq+1, right]
+            if left == seq-1:
+              seqrange.insert(index, [left])
+            else:
+              seqrange.insert(index, [left, seq-1])
+
+            if right == seq+1:
+              seqrange.insert(index+1, [right])
+            else:
+              seqrange.insert(index+1, [seq+1, right])
+              
+        break
+            
+      else: # none of the above cases
+        continue
+
+      
+
+def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
   """
   A closure that receives ack from the receiver, removes it from 
   packetsequence, and update the recently observed RTT
   """
   
-  def ack(): 
-      
+  def ack():      
     """
     Inside of the closure
     """
@@ -71,6 +117,10 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs):
         remoteip, remoteport, message = routerlistensocket.getmessage()
         recvtime = getruntime()
         (seq, move) = deserialize(message)  # TODO: use movement info 
+
+        log("received " + seq + "th packet.\n")
+        delfromseqrange(int(seq), seqrange)
+        log(str(seqrange) + '\n')
              
         if int(seq) in packetsequence:
           sendtime = packetsequence[int(seq)]
@@ -85,7 +135,7 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs):
 
             # update RTT
             recentobservedRTTs.append(rtt)
-            if len(recentobservedRTTs) > WIN: # only keep WIN most recent RTTs
+            if len(recentobservedRTTs) > RTTWIN: # only keep RTTWIN most recent RTTs
               recentobservedRTTs.pop(0)
 
             logifdebug(DEBUG, "recentobservedRTTs: " + str(recentobservedRTTs) + "\n")
@@ -105,20 +155,18 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs):
 
 
 def expiresentpackets(recentobservedRTTs, packetsequence):
-
   """
   A closure that checks if a packet in packetsequence has
   timed out.
   """
   
   def rtt():
-
     """
     Inside of the closure
     """
   
     while True:
-      if len(recentobservedRTTs) < WIN: # need at least WIN pkts
+      if len(recentobservedRTTs) < RTTWIN: # need at least RTTWIN pkts
         continue 
 
       delseq = []
@@ -146,47 +194,71 @@ def expiresentpackets(recentobservedRTTs, packetsequence):
   return rtt
 
 
+def checkloss(seqrange):
+  """
+  When reaches WIN, check pkt loss
+  """
+  log("after WIN..." + str(seqrange) + '\n')
+  
+
 ############ main program ############ 
 
 (localip, localport) = (getmyip(), 63100)
-(destip, destport) = (getmyip(), 63101)  # TODO: this needs to be phone's IP
+(destip, destport) = ('206.87.193.197', 63101)  # TODO: this needs to be phone's IP
+#(getmyip(), 63101) 
+
+log("my IP: " + localip + '\n')
 
 # router's socket for client's ack
 routerlistensocket = listenformessage(localip, localport)
+seqrange = [[1, WIN]]   # record sent/outstanding packets
 
 # initial variables
 starttime = getruntime()
 packetsequence = {}
 recentobservedRTTs = []  # initially set to a large value
-totallen = 0   # record total bytes received
+totalbits = 0   # record total bytes received
 totaltime = 0
 
 # thread that receives ack from the receiver, removes it from 
 # packetsequence, and update the recently observed RTT
-createthread(recvack(routerlistensocket, packetsequence, recentobservedRTTs))
+createthread(recvack(routerlistensocket, packetsequence, 
+                     recentobservedRTTs, seqrange))
 
 # thread that checks if a packet in packetsequence has timed out.
 createthread(expiresentpackets(recentobservedRTTs, packetsequence))
 
-while True: 
-  # router sends a bunch of packets to the client
-  packet = str(sequenceno) + "|" + '0'*LENGTH 
-  packetsequence[sequenceno] = getruntime()  # record (seq, sendtime)
-  
-  logifdebug(DEBUG, "sending " + str(sequenceno) + "th packet. sending sequence: " 
-    + str(packetsequence))
-  
-  sendmessage(destip, destport, str(packet), localip, localport)
+lastchecktime = getruntime()   # record total time spent over a CYCLE 
 
-  # ib: So, you are basically doing stop-and-wait by sleeping below. You
-  # are waiting for each ack before sending the next packet. This is
-  # safe (i.e., only one data packet in the pipe at a time), but highly
-  # inefficient. You want to saturate the pipe by sending a preset
-  # window of packets in each RTT, and change the window based on
-  # observed loss.
- 
+while True: 
+    
+  while sequenceno <= WIN:
+    # router sends a bunch of packets to the client
+    packet = str(sequenceno) + "|" + '0'*LENGTH 
+    packetsequence[sequenceno] = getruntime()  # record (seq, sendtime)
+  
+    logifdebug(DEBUG, "sending " + str(sequenceno) + "th packet. sending sequence: " 
+      + str(packetsequence))
+  
+    sendmessage(destip, destport, str(packet), localip, localport)
+    totalbits = totalbits + len(packet)*8
+    currenttime = getruntime()
+    totaltime = currenttime - lastchecktime
+    if totaltime > CYCLE:
+      # check throughput and movement every CYCLE sec
+      lastchecktime = currenttime # reset clock
+      throughput = float(totalbits)/(totaltime)/1000000 
+      log("send rate: " + str(throughput) + " Mbps\n")
+      totalbits = 0  # reset bits
+
+    sequenceno = sequenceno + 1
+
   if recentobservedRTTs != []:
     sleep(estimateRTT(recentobservedRTTs))
+    
+  checkloss(seqrange)  # when reaches WIN, check pkt loss
 
-  sequenceno = sequenceno + 1
+  seqrange = [[1, WIN]]  # reset sequence window and number
+  sequenceno = 1
+
 
