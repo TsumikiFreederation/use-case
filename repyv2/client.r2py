@@ -17,8 +17,7 @@
 dy_import_module_symbols('random.r2py')
 
 
-def deserializepacket(packet):
-    
+def deserializepacket(packet):    
   """
   Returns the sequence of the packet, and payload length in bits.
   """
@@ -26,8 +25,7 @@ def deserializepacket(packet):
   return (seq, len(payload)*8)  # 1 byte = 8 bits
 
 
-def getmovement():
-    
+def getmovement():    
   """
   Returns the user holding this phone is moving or not.
   """    
@@ -41,7 +39,6 @@ def getmovement():
 
 
 def logifdebug(DEBUG, string):
-
   """
   Prints out string if DEBUG == 1.
   """
@@ -55,7 +52,7 @@ def logifdebug(DEBUG, string):
 
 DEBUG = 0  # output some debug messages if DEBUG == 1
            # TODO: make this a command line arg
-CYCLE = 0.1
+CYCLE = 1  # time duration to calculate throughput
 
 (localip, localport) = (getmyip(), 63101)
 (destip, destport) = (getmyip(), 63100) # TODO: this needs to be router's IP
@@ -65,15 +62,11 @@ phonelistensocket = listenformessage(localip, localport)
 ack = ''       # string for sending back ack
 packet = ''    # string for received packet on phonelistensocket
 totalbits = 0   # record total bits received over a CYCLE 
-totaltime = 0   # record total time spent over a CYCLE 
+lastchecktime = 0   # record total time spent over a CYCLE 
 
-while True:
-  starttime = getruntime()  # reset clock
+while True: 
   try:
-    remoteip, remoteport, packet = phonelistensocket.getmessage()
-    endtime = getruntime()
-    getmessagetime = endtime - starttime
-      
+    remoteip, remoteport, packet = phonelistensocket.getmessage()      
   except SocketWouldBlockError:
     pass
 
@@ -81,15 +74,16 @@ while True:
     (seq, payloadlen) = deserializepacket(packet)
     logifdebug(DEBUG, "received " + seq + "th packet.\n")
     totalbits = totalbits + payloadlen  
-    totaltime = totaltime + getmessagetime
     packet = '' 
+    currenttime = getruntime()
+    totaltime = currenttime - lastchecktime
 
     if totaltime > CYCLE:
-      # check throughput and movement every 100 ms
+      # check throughput and movement every CYCLE sec
+      lastchecktime = currenttime # reset clock
       throughput = float(totalbits)/(totaltime)/1000000 
       log("recv rate: " + str(throughput) + " Mbps\n")
-      totaltime = 0
-      totalbits = 0 
+      totalbits = 0  # reset bits
       move = getmovement()
       ack = seq + "|" + str(move)
     else:
