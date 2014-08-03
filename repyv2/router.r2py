@@ -118,9 +118,9 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
         recvtime = getruntime()
         (seq, move) = deserialize(message)  # TODO: use movement info 
 
-        log("received " + seq + "th packet.\n")
+        #log("received " + seq + "th packet.\n")
         delfromseqrange(int(seq), seqrange)
-        log(str(seqrange) + '\n')
+        #log(str(seqrange) + '\n')
              
         if int(seq) in packetsequence:
           sendtime = packetsequence[int(seq)]
@@ -198,7 +198,7 @@ def checkloss(seqrange):
   """
   When reaches WIN, check pkt loss
   """
-  log("after WIN..." + str(seqrange) + '\n')
+  log("after receiving " + str(WIN) + " packets, lost seq: " + str(seqrange) + '\n')
   
 
 ############ main program ############ 
@@ -226,7 +226,7 @@ createthread(recvack(routerlistensocket, packetsequence,
                      recentobservedRTTs, seqrange))
 
 # thread that checks if a packet in packetsequence has timed out.
-createthread(expiresentpackets(recentobservedRTTs, packetsequence))
+#createthread(expiresentpackets(recentobservedRTTs, packetsequence))
 
 lastchecktime = getruntime()   # record total time spent over a CYCLE 
 
@@ -248,7 +248,7 @@ while True:
       # check throughput and movement every CYCLE sec
       lastchecktime = currenttime # reset clock
       throughput = float(totalbits)/(totaltime)/1000000 
-      log("send rate: " + str(throughput) + " Mbps\n")
+      log("send rate: " + str(throughput) + " Mbps\n\n")
       totalbits = 0  # reset bits
 
     sequenceno = sequenceno + 1
@@ -258,7 +258,8 @@ while True:
     
   checkloss(seqrange)  # when reaches WIN, check pkt loss
 
-  seqrange = [[1, WIN]]  # reset sequence window and number
+  del seqrange[0:len(seqrange)]  # reset sequence window and number      
+  seqrange.append([1, WIN])  
   sequenceno = 1
 
 
