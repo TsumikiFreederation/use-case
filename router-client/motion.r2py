@@ -1,0 +1,133 @@
+"""
+motion.r2py -- Sensibility Testbed code for determining movement of the user
+
+Thomas Pierce, UBC, Canada
+
+"""
+
+dy_import_module_symbols("sensorlib.r2py")
+
+port = get_connectionport()
+sensor_socket = getconnection(port)
+
+#Clear old files
+#if "motion.txt" in listfiles():
+#    removefile("motion.txt")
+
+#out = openfile("motion.txt", True)
+#towrite = "AccX AccY AccZ SS\n\n"
+accel = [0,0,0]
+a = 0.1
+t = 0
+
+request_data(sensor_socket, 'startSensingTimed', [1, 50])
+
+# Collect sensor data for 20 rounds, and use this as the threshold,
+# wait 50 ms between each loop.
+
+sensor_data = request_data(sensor_socket, 'ttsSpeak', ['Collecting threshold data'])
+
+for i in range (1, 101):
+    try:
+        sensor_data = request_data(sensor_socket, 'sensorsReadAccelerometer', [])
+    
+        Xi =  sensor_data[0]
+        Yi =  sensor_data[1]
+        Zi =  sensor_data[2]
+
+        X0 =  accel[0]
+        Y0 =  accel[1]
+        Z0 =  accel[2]
+
+        # Apply high-pass filter
+        Xh = Xi - (a*X0 + (1-a)*Xi)
+        Yh = Yi - (a*Y0 + (1-a)*Yi)
+        Zh = Zi - (a*Z0 + (1-a)*Zi)
+
+        # Apply low-pass filter on the rest
+        Xl = Xh * a + X0 * (1 - a)
+        Yl = Yh * a + Y0 * (1 - a)
+        Zl = Zh * a + Z0 * (1 - a)
+
+        accel = [Xl, Yl, Zl]
+        if (i > 49):
+            ss = (Xl ** 2 + Yl ** 2 + Zl ** 2) ** 0.5
+            t += ss
+            #towrite += (str(Xl) + ", " + str(Yl) + ", " + str(Zl) + ", " + str(ss) + "\n")
+
+        sleep(0.05)
+
+    except Exception as e:
+        log(str(e), '\n')
+        sensor_socket.close()
+        raise
+
+t = t/50
+sensor_data = request_data(sensor_socket, 'ttsSpeak', ['Threshold set to ' + str(round(t, 2))])
+
+count = 0
+moving = False
+
+while(True):
+    try:
+        sensor_data = request_data(sensor_socket, 'sensorsReadAccelerometer', [])
+    
+        Xi =  sensor_data[0]
+        Yi =  sensor_data[1]
+        Zi =  sensor_data[2]
+
+        X0 =  accel[0]
+        Y0 =  accel[1]
+        Z0 =  accel[2]
+
+        # Apply high-pass filter
+        Xh = Xi - (a*X0 + (1-a)*Xi)
+        Yh = Yi - (a*Y0 + (1-a)*Yi)
+        Zh = Zi - (a*Z0 + (1-a)*Zi)
+
+        # Apply low-pass filter on the rest
+        Xl = Xh * a + X0 * (1 - a)
+        Yl = Yh * a + Y0 * (1 - a)
+        Zl = Zh * a + Z0 * (1 - a)
+
+        accel = [Xl, Yl, Zl]
+
+        ss = (Xl ** 2 + Yl ** 2 + Zl ** 2) ** 0.5
+
+        if (moving):
+            if ((0.975 * t) < ss < (1.025 * t)):
+                if (count == 9 ):
+                    sensor_data = request_data(sensor_socket, 'ttsSpeak', ["Stop"])
+                    moving = False
+                    count = 0
+                else:
+                    count += 1
+            else:
+                count = 0
+        else:
+            if ((0.975 * t) > ss or ss > (1.025 * t)):
+                if (count == 2 ):
+                    sensor_data = request_data(sensor_socket, 'ttsSpeak', ["Start"])
+                    moving = True
+                    count = 0
+                else:
+                    count += 1
+            else:
+                count = 0
+
+        #towrite += (str(Xl) + ", " + str(Yl) + ", " + str(Zl) + ", " + str(ss) + "\n")
+
+        sleep(0.05)
+
+    except Exception as e:
+        log(str(e), '\n')
+        sensor_socket.close()
+        raise
+
+#towrite += str(t)
+#out.writeat(towrite, 0)
+#out.close()
+#sensor_data = request_data(sensor_socket, 'ttsSpeak', ["File written"])
+
+request_data(sensor_socket, 'stopSensing', [])
+sensor_socket.close()
