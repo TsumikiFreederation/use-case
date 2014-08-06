@@ -12,16 +12,6 @@
   Router as the data sender, for the use case of rate adaptation.
 """
 
-############ define protocol parameters ############ 
-LENGTH = 1000    # packet length (change for different tx rates)
-RTTWIN = 10      # check packet loss every RTTWIN ack
-WIN = 1000        # window size to check for sending rate
-sequenceno = 1   # sequence number of packets, starting from 1 to WIN
-
-DEBUG = 0     # output some debug messages if DEBUG == 1 
-              # TODO: make this a command line arg
-CYCLE = 1  # time duration to calculate throughput
-
 
 def deserialize(message):      
   """
@@ -118,9 +108,9 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
         recvtime = getruntime()
         (seq, move) = deserialize(message)  # TODO: use movement info 
 
-        #log("received " + seq + "th packet.\n")
+        #logifdebug(DEBUG, "received " + seq + "th packet at " + str(recvtime))
         delfromseqrange(int(seq), seqrange)
-        #log(str(seqrange) + '\n')
+        #logifdebug(DEBUG, str(seqrange))
              
         if int(seq) in packetsequence:
           sendtime = packetsequence[int(seq)]
@@ -131,7 +121,7 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
             rtt = recvtime - sendtime
             logifdebug(DEBUG, seq + "th pkt received. send time: " + str(sendtime) + 
                 "  receive time: " + str(recvtime) + "  rtt: " + str(rtt) 
-                + ". seq queue: " + str(packetsequence)) 
+                + ". seq queue: " + str(packetsequence) + ", outstanding " + str(seqrange)) 
 
             # update RTT
             recentobservedRTTs.append(rtt)
@@ -198,15 +188,24 @@ def checkloss(seqrange):
   """
   When reaches WIN, check pkt loss
   """
-  log("after receiving " + str(WIN) + " packets, lost seq: " + str(seqrange) + '\n')
-  
+  log("after sending " + str(WIN) + " packets, lost seq: " + str(seqrange) + '\n')
+
+
+############ define protocol parameters ############ 
+LENGTH = 1000    # packet length (change for different tx rates)
+RTTWIN = 10      # check packet loss every RTTWIN ack
+WIN = 1000        # window size to check for packet loss
+sequenceno = 1   # sequence number of packets, starting from 1 to WIN
+
+DEBUG = 0     # output some debug messages if DEBUG == 1 
+              # TODO: make this a command line arg
+CYCLE = 1  # time duration to calculate throughput
+
 
 ############ main program ############ 
 
 (localip, localport) = (getmyip(), 63100)
-(destip, destport) = ('206.87.193.197', 63101)  # TODO: this needs to be phone's IP
-#(getmyip(), 63101) 
-
+(destip, destport) = ('206.87.193.166', 63101)  # TODO: this needs to be phone's IP
 log("my IP: " + localip + '\n')
 
 # router's socket for client's ack
@@ -220,27 +219,33 @@ recentobservedRTTs = []  # initially set to a large value
 totalbits = 0   # record total bytes received
 totaltime = 0
 
+sendtotal = 0   # time to send WIN packets
+
 # thread that receives ack from the receiver, removes it from 
 # packetsequence, and update the recently observed RTT
 createthread(recvack(routerlistensocket, packetsequence, 
                      recentobservedRTTs, seqrange))
 
 # thread that checks if a packet in packetsequence has timed out.
-#createthread(expiresentpackets(recentobservedRTTs, packetsequence))
+createthread(expiresentpackets(recentobservedRTTs, packetsequence))
 
 lastchecktime = getruntime()   # record total time spent over a CYCLE 
 
 while True: 
     
+  starttime = getruntime()  # record time before sending WIN packets
   while sequenceno <= WIN:
     # router sends a bunch of packets to the client
     packet = str(sequenceno) + "|" + '0'*LENGTH 
     packetsequence[sequenceno] = getruntime()  # record (seq, sendtime)
-  
-    logifdebug(DEBUG, "sending " + str(sequenceno) + "th packet. sending sequence: " 
-      + str(packetsequence))
-  
+    sendstarts = packetsequence[sequenceno]
+    #logifdebug(DEBUG, "sending " + str(sequenceno) + "th packet at " + str(packetsequence[sequenceno]))
+    # sending sequence: " + str(packetsequence))
+
     sendmessage(destip, destport, str(packet), localip, localport)
+    sendends = getruntime()
+    sendtotal = sendtotal + sendends - sendstarts
+    
     totalbits = totalbits + len(packet)*8
     currenttime = getruntime()
     totaltime = currenttime - lastchecktime
@@ -253,13 +258,22 @@ while True:
 
     sequenceno = sequenceno + 1
 
+  endtime = getruntime()  # record time after sending WIN packets
+
+  logifdebug(1, "it took " + str(endtime-starttime) + " to send " + str(WIN)
+             + " pkts of " + str(LENGTH) + "bytes")
+  logifdebug(1, "time spent sendmessage: " + str(sendtotal))
+  sendtotal = 0
+
   if recentobservedRTTs != []:
     sleep(estimateRTT(recentobservedRTTs))
     
-  checkloss(seqrange)  # when reaches WIN, check pkt loss
+  #checkloss(seqrange)  # when reaches WIN, check pkt loss
 
   del seqrange[0:len(seqrange)]  # reset sequence window and number      
   seqrange.append([1, WIN])  
+
+  #packetsequence.clear()     # reset packet sequence 
   sequenceno = 1
 
 
