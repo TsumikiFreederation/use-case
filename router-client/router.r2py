@@ -42,46 +42,41 @@ def logifdebug(DEBUG, string):
     return 
 
 
+def rangeinsert(first, second, seqrange, index):
+  """
+  Depending on the values of first, second, 
+  insert the correct range in seqrange at index.
+  """
+  if first == second:
+    seqrange.insert(index, [first])
+  else:
+    seqrange.insert(index, [first, second])
+              
+
 def delfromseqrange(seq, seqrange):
   """
   Delete seq from the sequence range. Add new range if necessary.
   """
-  for subrange in seqrange:
-      
+  for subrange in seqrange:      
     index = seqrange.index(subrange)
 
     if len(subrange) == 1:
         if seq == subrange[0]:
           seqrange.remove(subrange)  
     else:
-      left, right = subrange
- 
+      left, right = subrange 
       if right >= seq:
-        seqrange.remove(subrange)
-        
-        if right == seq:  # change to [left, right-1]        
-          if left == right-1:  # TODO: replace if..else with a func
-            seqrange.insert(index, [left])
-          else:
-            seqrange.insert(index, [left, right-1])
+        seqrange.remove(subrange)        
+        if right == seq:  # change to [left, right-1] 
+          rangeinsert(left, right-1, seqrange, index)
           
         else: # right > seq
           if left == seq:  # change to [left+1, right]
-            if left+1 == right:
-              seqrange.insert(index, [left+1])
-            else:
-              seqrange.insert(index, [left+1, right])
+            rangeinsert(left+1, right, seqrange, index)
           else: # left < seq < right: 
                 # change to [left, seq-1], [seq+1, right]
-            if left == seq-1:
-              seqrange.insert(index, [left])
-            else:
-              seqrange.insert(index, [left, seq-1])
-
-            if right == seq+1:
-              seqrange.insert(index+1, [right])
-            else:
-              seqrange.insert(index+1, [seq+1, right])
+            rangeinsert(left, seq-1, seqrange, index)
+            rangeinsert(seq+1, right, seqrange, index+1)
               
         break
             
@@ -108,9 +103,9 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
         recvtime = getruntime()
         (seq, move) = deserialize(message)  # TODO: use movement info 
 
-        #logifdebug(DEBUG, "received " + seq + "th packet at " + str(recvtime))
+        logifdebug(DEBUG, "received " + seq + "th packet at " + str(recvtime))
         delfromseqrange(int(seq), seqrange)
-        #logifdebug(DEBUG, str(seqrange))
+        logifdebug(DEBUG, str(seqrange))
              
         if int(seq) in packetsequence:
           sendtime = packetsequence[int(seq)]
@@ -205,7 +200,7 @@ CYCLE = 1  # time duration to calculate throughput
 ############ main program ############ 
 
 (localip, localport) = (getmyip(), 63100)
-(destip, destport) = ('206.87.193.166', 63101)  # TODO: this needs to be phone's IP
+(destip, destport) = ('206.87.192.231', 63101)  # TODO: this needs to be phone's IP
 log("my IP: " + localip + '\n')
 
 # router's socket for client's ack
