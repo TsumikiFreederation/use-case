@@ -55,7 +55,9 @@ DEBUG = 0  # output some debug messages if DEBUG == 1
 CYCLE = 1  # time duration to calculate throughput
 
 (localip, localport) = (getmyip(), 63101)
-(destip, destport) = (getmyip(), 63100) # TODO: this needs to be router's IP
+(destip, destport) = ('128.189.201.34', 63100) # TODO: this needs to be router's IP
+
+log(getmyip() + '\n')
 
 phonelistensocket = listenformessage(localip, localport)
 
