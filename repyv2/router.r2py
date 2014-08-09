@@ -61,6 +61,7 @@ def delfromseqrange(seq, seqrange):
   """
   Delete seq from the sequence range. Add new range if necessary.
   """
+  
   for subrange in seqrange[::-1]:
     #for subrange, index in zip(seqrange,range(len(seqrange))):      
     index = seqrange.index(subrange)
@@ -94,6 +95,7 @@ def addtoseqrange(seq, seqrange):
   """
   Add seq to the sequence range. 
   """
+  
   if seqrange == []:
     seqrange.append([seq])
   else:      
@@ -139,11 +141,11 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
         (seq, move) = deserialize(message)  # TODO: use movement info 
 
         logifdebug(DEBUG, "received " + seq + "th packet at " + str(recvtime))
-        listlock.acquire(True)
+        #listlock.acquire(True)
         delfromseqrange(int(seq), seqrange)
-        listlock.release()
+        #listlock.release()
         logifdebug(DEBUG, str(seqrange))
-             
+      
         if int(seq) in packetsequence:
           sendtime = packetsequence[int(seq)]
           # delete seq upon ack
@@ -151,9 +153,9 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
             del packetsequence[int(seq)]           
             # if del throws KeyError, the rest from here in the try block will be skipped
             rtt = recvtime - sendtime
-            logifdebug(DEBUG, seq + "th pkt received. send time: " + str(sendtime) + 
-                "  receive time: " + str(recvtime) + "  rtt: " + str(rtt) 
-                + ". seq queue: " + str(packetsequence) + ", outstanding " + str(seqrange)) 
+            #logifdebug(DEBUG, seq + "th pkt received. send time: " + str(sendtime) + 
+            #    "  receive time: " + str(recvtime) + "  rtt: " + str(rtt) 
+            #    + ". seq queue: " + str(packetsequence) + ", outstanding " + str(seqrange)) 
 
             # update RTT
             recentobservedRTTs.append(rtt)
@@ -253,7 +255,7 @@ def main():
                      recentobservedRTTs, seqrange))
 
   # thread that checks if a packet in packetsequence has timed out.
-  #createthread(expiresentpackets(recentobservedRTTs, packetsequence))
+  createthread(expiresentpackets(recentobservedRTTs, packetsequence))
 
   lastchecktime = getruntime()   # record total time spent over a CYCLE 
 
@@ -268,9 +270,9 @@ def main():
       packetsequence[sequenceno] = getruntime()  # record (seq, sendtime)
       
       logifdebug(DEBUG, "sending " + str(sequenceno) + "th packet at " + str(packetsequence[sequenceno]))
-      listlock.acquire(True)
+      #listlock.acquire(True)
       addtoseqrange(sequenceno, seqrange)
-      listlock.release()
+      #listlock.release()
       sendmessage(destip, destport, str(packet), localip, localport)
       logifdebug(DEBUG, str(seqrange))
       
@@ -292,8 +294,10 @@ def main():
              + " pkts of " + str(LENGTH) + "bytes")
     sendtotal = 0
 
-    if recentobservedRTTs != []:
-      sleep(estimateRTT(recentobservedRTTs))
+    #if recentobservedRTTs != []:
+    #  sleeptime = estimateRTT(recentobservedRTTs)
+    #  log("sleeping " + str(sleeptime) + 'ms.\n')
+    #  sleep(sleeptime)
     
     #checkloss(seqrange)  # when reaches WIN, check pkt loss
 
@@ -308,7 +312,7 @@ def main():
 ############ define protocol parameters ############   
 LENGTH = 1000    # packet length (change for different tx rates)
 RTTWIN = 10      # check packet loss every RTTWIN ack
-WIN = 100        # window size to check for packet loss
+WIN = 1000        # window size to check for packet loss
 DEBUG = 0     # output some debug messages if DEBUG == 1 
               # TODO: make this a command line arg
 N = 10      # timestamp packets every Nth
