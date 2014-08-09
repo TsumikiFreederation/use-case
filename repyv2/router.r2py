@@ -82,7 +82,35 @@ def delfromseqrange(seq, seqrange):
       else: # none of the above cases
         continue
 
-      
+
+def addtoseqrange(seq, seqrange):
+  """
+  Add seq to the sequence range. 
+  """
+  if seqrange == []:
+    seqrange.append([seq])
+  else:      
+    for subrange in seqrange[::-1]:      
+      index = seqrange.index(subrange)
+
+      if len(subrange) == 1:  
+        right = subrange[0]
+        left = right
+      else: # len(subrange) == 2
+        left, right = subrange 
+
+      if right > seq:  # this case shouldn't exist: send 12 before 11
+        continue        
+
+      if right < seq - 1:  # [[1,3], [5,7], [10]]: now send seq 12
+        seqrange.append([seq])   # [[1,3], [5,7], [10], [12]]
+      elif right == seq - 1:  # [[1,3], [5,7], [10]]: now send seq 11
+        #seqrange.remove(subrange)
+        #seqrange.append([left, seq])  # [[1,3], [5,7], [10,11]]
+        seqrange[index] = [left, seq]
+
+      break
+    
 
 def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
   """
@@ -191,20 +219,20 @@ def main():
   """
 
   (localip, localport) = (getmyip(), 63100)
-  (destip, destport) = ('206.12.54.53', 63101)  # TODO: this needs to be phone's IP
+  (destip, destport) = ('206.12.54.29', 63101)  # TODO: this needs to be phone's IP
   log("my IP: " + localip + '\n')
 
   # router's socket for client's ack
   routerlistensocket = listenformessage(localip, localport)
-  seqrange = [[1, WIN]]   # record sent/outstanding packets
+  #seqrange = [[1, WIN]]   # record sent/outstanding packets
   sequenceno = 1   # sequence number of packets, starting from 1 to WIN
+  seqrange = []   # record sent/outstanding packets
   
   # initial variables
   packetsequence = {}
   recentobservedRTTs = []  # initially set to a large value
   totalbits = 0   # record total bytes received
   totaltime = 0
-
   sendtotal = 0   # time to send WIN packets
 
   # thread that receives ack from the receiver, removes it from 
@@ -226,7 +254,10 @@ def main():
       packet = str(sequenceno) + "|" + '0'*LENGTH 
       packetsequence[sequenceno] = getruntime()  # record (seq, sendtime)
 
+      logifdebug(DEBUG, "sending " + str(sequenceno) + "th packet at " + str(packetsequence[sequenceno]))
+      addtoseqrange(sequenceno, seqrange)
       sendmessage(destip, destport, str(packet), localip, localport)
+      logifdebug(DEBUG, str(seqrange))
       
       totalbits = totalbits + len(packet)*8
       currenttime = getruntime()
@@ -252,7 +283,7 @@ def main():
     #checkloss(seqrange)  # when reaches WIN, check pkt loss
 
     del seqrange[0:len(seqrange)]  # reset sequence window and number      
-    seqrange.append([1, WIN])  
+    #seqrange.append([1, WIN])  
 
     #packetsequence.clear()     # reset packet sequence 
     sequenceno = 1
