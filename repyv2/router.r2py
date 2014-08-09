@@ -141,9 +141,9 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
         (seq, move) = deserialize(message)  # TODO: use movement info 
 
         logifdebug(DEBUG, "received " + seq + "th packet at " + str(recvtime))
-        #listlock.acquire(True)
+        listlock.acquire(True)
         delfromseqrange(int(seq), seqrange)
-        #listlock.release()
+        listlock.release()
         logifdebug(DEBUG, str(seqrange))
       
         if int(seq) in packetsequence:
@@ -238,9 +238,8 @@ def main():
 
   # router's socket for client's ack
   routerlistensocket = listenformessage(localip, localport)
-  seqrange = [[1, WIN]]   # record sent/outstanding packets
   sequenceno = 1   # sequence number of packets, starting from 1 to WIN
-  #seqrange = []   # record sent/outstanding packets
+  seqrange = []   # record outstanding packets
   
   # initial variables
   packetsequence = {}
@@ -270,9 +269,9 @@ def main():
       packetsequence[sequenceno] = getruntime()  # record (seq, sendtime)
       
       logifdebug(DEBUG, "sending " + str(sequenceno) + "th packet at " + str(packetsequence[sequenceno]))
-      #listlock.acquire(True)
+      listlock.acquire(True)
       addtoseqrange(sequenceno, seqrange)
-      #listlock.release()
+      listlock.release()
       sendmessage(destip, destport, str(packet), localip, localport)
       logifdebug(DEBUG, str(seqrange))
       
@@ -301,8 +300,7 @@ def main():
     
     #checkloss(seqrange)  # when reaches WIN, check pkt loss
 
-    del seqrange[0:len(seqrange)]  # reset sequence window and number      
-    seqrange.append([1, WIN])  
+    del seqrange[0:len(seqrange)]  # reset sequence window and number        
 
     #packetsequence.clear()     # reset packet sequence 
     sequenceno = 1
