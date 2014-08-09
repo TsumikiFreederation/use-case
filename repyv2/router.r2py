@@ -12,11 +12,6 @@
   Router as the data sender, for the use case of rate adaptation.
 """
 
-from repyportability import *
-import time
-getruntime = time.time
-
-
 def deserialize(message):      
   """
   Returns the sequence of the packet, and movement hint.
@@ -196,7 +191,7 @@ def main():
   """
 
   (localip, localport) = (getmyip(), 63100)
-  (destip, destport) = ('206.87.192.231', 63101)  # TODO: this needs to be phone's IP
+  (destip, destport) = ('206.12.54.53', 63101)  # TODO: this needs to be phone's IP
   log("my IP: " + localip + '\n')
 
   # router's socket for client's ack
@@ -205,7 +200,6 @@ def main():
   sequenceno = 1   # sequence number of packets, starting from 1 to WIN
   
   # initial variables
-  starttime = getruntime()
   packetsequence = {}
   recentobservedRTTs = []  # initially set to a large value
   totalbits = 0   # record total bytes received
@@ -231,14 +225,9 @@ def main():
       # router sends a bunch of packets to the client
       packet = str(sequenceno) + "|" + '0'*LENGTH 
       packetsequence[sequenceno] = getruntime()  # record (seq, sendtime)
-      sendstarts = packetsequence[sequenceno]
-      #logifdebug(DEBUG, "sending " + str(sequenceno) + "th packet at " + str(packetsequence[sequenceno]))
-      # sending sequence: " + str(packetsequence))
 
       sendmessage(destip, destport, str(packet), localip, localport)
-      sendends = getruntime()
-      sendtotal = sendtotal + sendends - sendstarts
-    
+      
       totalbits = totalbits + len(packet)*8
       currenttime = getruntime()
       totaltime = currenttime - lastchecktime
@@ -255,7 +244,6 @@ def main():
 
     logifdebug(1, "it took " + str(endtime-starttime) + " to send " + str(WIN)
              + " pkts of " + str(LENGTH) + "bytes")
-    logifdebug(1, "time spent sendmessage: " + str(sendtotal))
     sendtotal = 0
 
     if recentobservedRTTs != []:
@@ -270,15 +258,13 @@ def main():
     sequenceno = 1
 
 
-if __name__ == '__main__':
     
-  ############ define protocol parameters ############   
-  LENGTH = 1000    # packet length (change for different tx rates)
-  RTTWIN = 10      # check packet loss every RTTWIN ack
-  WIN = 1000        # window size to check for packet loss
-
-  DEBUG = 0     # output some debug messages if DEBUG == 1 
+############ define protocol parameters ############   
+LENGTH = 1000    # packet length (change for different tx rates)
+RTTWIN = 10      # check packet loss every RTTWIN ack
+WIN = 1000        # window size to check for packet loss
+DEBUG = 0     # output some debug messages if DEBUG == 1 
               # TODO: make this a command line arg
-  CYCLE = 1  # time duration to calculate throughput
+CYCLE = 1  # time duration to calculate throughput
 
-  main()
+main()
