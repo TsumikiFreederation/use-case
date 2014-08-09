@@ -57,6 +57,7 @@ checkpythonversion.ensure_python_version_is_supported()
 import safe
 import nanny
 import emulcomm
+import emultimer
 import idhelper
 import harshexit
 import namespace
@@ -92,6 +93,14 @@ if "fork" in dir(os):
   os.fork = nonSafe_fork
 
 
+def check_sendmessage(a,b,c,d,e):
+  assert(type(a) == str)
+  assert(type(b) == int)
+  assert(type(c) == str)
+  assert(type(d) == str)
+  assert(type(e) == int)
+  return emulcomm.sendmessage(a,b,c,d,e)
+  
 
 def get_safe_context(args):
 
@@ -117,9 +126,13 @@ def get_safe_context(args):
   #usercontext["removefile"] = emulfile.removefile
   #usercontext["exitall"] = emulmisc.exitall
   #usercontext["createlock"] = emulmisc.createlock
-  #usercontext["getruntime"] = emulmisc.getruntime
+  #usercontext["getruntime"] = time.time
+  usercontext["getruntime"] = emulmisc.getruntime
   #usercontext["randombytes"] = emulmisc.randombytes
-  #usercontext["createthread"] = emultimer.createthread
+  usercontext["createthread"] = emultimer.createthread
+  #usercontext["sendmessage"] = check_sendmessage
+  usercontext["sendmessage"] = emulcomm.sendmessage
+  usercontext["listenformessage"] = emulcomm.listenformessage
   #usercontext["sleep"] = emultimer.sleep
   #usercontext["getthreadname"] = emulmisc.getthreadname
   usercontext["createvirtualnamespace"] = virtual_namespace.createvirtualnamespace
@@ -305,7 +318,7 @@ def initialize_nanny(resourcefn):
   nanny.start_resource_nanny(resourcefn)
 
   # now, let's fire up the cpu / disk / memory monitor...
-  nonportable.monitor_cpu_disk_and_mem()
+  #nonportable.monitor_cpu_disk_and_mem()
 
   # JAC: I believe this is needed for interface / ip-based restrictions
   emulcomm.update_ip_cache()

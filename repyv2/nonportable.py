@@ -179,6 +179,7 @@ def getruntime():
    <Returns>
       The elapsed time as float
   """
+  return time.time()
   global starttime, last_uptime, last_timestamp, elapsedtime, granularity, runtimelock
   
   # Get the lock

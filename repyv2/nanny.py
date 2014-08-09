@@ -530,3 +530,15 @@ def get_resource_information():
   return (resource_limit_dict, resource_use_dict)
 
 
+def _always_true(*args):
+  return True  
+
+
+def _do_nothing(*args):
+  pass
+
+tattle_quantity = _do_nothing
+tattle_add_item = _do_nothing
+tattle_remove_item = _do_nothing
+is_item_allowed = _always_true
+#get_resource_limit = _do_nothing

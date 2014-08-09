@@ -129,8 +129,8 @@ def enable_restrictions():
   nanny.tattle_remove_item = oldrestrictioncalls['nanny.tattle_remove_item'] 
   nanny.is_item_allowed = oldrestrictioncalls['nanny.is_item_allowed'] 
   nanny.get_resource_limit = oldrestrictioncalls['nanny.get_resource_limit']
-  nanny._resources_allowed_dict = oldrestrictioncalls['nanny._resources_allowed_dict']
-  nanny._resources_consumed_dict = oldrestrictioncalls['_resources_consumed_dict']
+  #nanny._resources_allowed_dict = oldrestrictioncalls['nanny._resources_allowed_dict']
+  #nanny._resources_consumed_dict = oldrestrictioncalls['nanny._resources_consumed_dict']
   emulfile.assert_is_allowed_filename = oldrestrictioncalls['emulfile.assert_is_allowed_filename']
   
 # from virtual_namespace import VirtualNamespace

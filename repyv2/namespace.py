@@ -264,6 +264,7 @@ class ValueProcessor(BaseProcessor):
 
   def copy(self, val):
     return _copy(val)
+    #return val
 
 
 
