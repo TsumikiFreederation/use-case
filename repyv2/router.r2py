@@ -137,10 +137,10 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
       try:
         # receive ack and movement hint from client
         remoteip, remoteport, message = routerlistensocket.getmessage()
-        recvtime = getruntime()
+        now = getruntime()
         (seq, move) = deserialize(message)  # TODO: use movement info 
 
-        logifdebug(DEBUG, "received " + seq + "th packet at " + str(recvtime))
+        logifdebug(DEBUG, "received " + seq + "th packet at " + str(now))
         listlock.acquire(True)
         delfromseqrange(int(seq), seqrange)
         listlock.release()
@@ -152,17 +152,22 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
           try:
             del packetsequence[int(seq)]           
             # if del throws KeyError, the rest from here in the try block will be skipped
-            rtt = recvtime - sendtime
+            newrtt = now - sendtime
             #logifdebug(DEBUG, seq + "th pkt received. send time: " + str(sendtime) + 
-            #    "  receive time: " + str(recvtime) + "  rtt: " + str(rtt) 
+            #    "  receive time: " + str(now) + "  rtt: " + str(newrtt) 
             #    + ". seq queue: " + str(packetsequence) + ", outstanding " + str(seqrange)) 
 
             # update RTT
-            recentobservedRTTs.append(rtt)
+            recentobservedRTTs.append(newrtt)
             if len(recentobservedRTTs) > RTTWIN: # only keep RTTWIN most recent RTTs
               recentobservedRTTs.pop(0)
 
             logifdebug(DEBUG, "recentobservedRTTs: " + str(recentobservedRTTs) + "\n")
+            if recentobservedRTTs != []:
+              RTT = estimateRTT(recentobservedRTTs)
+
+            if oldestpktsendtime != [] and now - oldestpktsendtime[0] > 2* RTT:
+              checkloss(now, RTT, packetsequence, seqrange)
               
           except KeyError:
             # at this point, checkRTT thread could delete this packet
@@ -174,8 +179,8 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
           pass               
 
       except SocketWouldBlockError:
-        #pass
-        sleep(0.000001)
+        pass
+        #sleep(0.000001)
 
   return ack
 
@@ -220,11 +225,12 @@ def expiresentpackets(recentobservedRTTs, packetsequence):
   return rtt
 
 
-def checkloss(seqrange):
+def checkloss(now, RTT, packetsequence, seqrange):
   """
   When reaches WIN, check pkt loss
   """
   log("after sending " + str(WIN) + " packets, lost seq: " + str(seqrange) + '\n')
+  del oldestpktsendtime[0:len(oldestpktsendtime)]
 
 
 def main():
@@ -266,9 +272,14 @@ def main():
       # router sends a bunch of packets to the client
       packet = str(sequenceno) + "|" + '0'*LENGTH 
       #if sequenceno % N == 0:
-      packetsequence[sequenceno] = getruntime()  # record (seq, sendtime)
+      timestamp = getruntime()  # record (seq, sendtime)
+      packetsequence[sequenceno] = timestamp
+
+      if oldestpktsendtime == []:
+        oldestpktsendtime.append([])
+        oldestpktsendtime[0] = timestamp
       
-      logifdebug(DEBUG, "sending " + str(sequenceno) + "th packet at " + str(packetsequence[sequenceno]))
+      logifdebug(DEBUG, "sending " + str(sequenceno) + "th packet at " + str(timestamp))
       listlock.acquire(True)
       addtoseqrange(sequenceno, seqrange)
       listlock.release()
@@ -297,8 +308,6 @@ def main():
     #  sleeptime = estimateRTT(recentobservedRTTs)
     #  log("sleeping " + str(sleeptime) + 'ms.\n')
     #  sleep(sleeptime)
-    
-    #checkloss(seqrange)  # when reaches WIN, check pkt loss
 
     del seqrange[0:len(seqrange)]  # reset sequence window and number        
 
@@ -316,5 +325,7 @@ DEBUG = 0     # output some debug messages if DEBUG == 1
 N = 10      # timestamp packets every Nth
 CYCLE = 1  # time duration to calculate throughput
 
-listlock = createlock()
+listlock = createlock() # to sync data structure updates in different threads
+oldestpktsendtime = []   # record the time when the oldest pkt was sent
+
 main()
