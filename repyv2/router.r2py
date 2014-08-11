@@ -62,21 +62,19 @@ def delfromseqrange(seq, seqrange):
   Delete seq from the sequence range. Add new range if necessary.
   """
   
-  for subrange in seqrange[::-1]:
-    #for subrange, index in zip(seqrange,range(len(seqrange))):      
+  for subrange in seqrange:      
     index = seqrange.index(subrange)
     #log(str(index) + ": " + str(subrange) + "\n")
 
     if len(subrange) == 1:
-        if seq == subrange[0]:
-          seqrange.remove(subrange)  
+      if seq == subrange[0]:
+        seqrange.remove(subrange)  
     else:
       left, right = subrange 
       if right >= seq:
         #seqrange.remove(subrange)        
         if right == seq:  # change to [left, right-1] 
-          rangeinsert(left, right-1, seqrange, index)
-          
+          rangeinsert(left, right-1, seqrange, index)         
         else: # right > seq
           if left == seq:  # change to [left+1, right]
             rangeinsert(left+1, right, seqrange, index)
@@ -226,6 +224,7 @@ def expiresentpackets(recentobservedRTTs, packetsequence):
   return rtt
 
 
+
 def findlessthan(seqrange, seqlimit):
   """
   Find in seqrange all the seq numbers that are less than seqlimit.
@@ -246,11 +245,12 @@ def findlessthan(seqrange, seqlimit):
   return lostseq
 
 
+
 def checkloss(now, RTT, recentobservedRTTs, packetsequence, seqrange):
   """
   When reaches WIN, check pkt loss
   """
-  log("at " + str(now) + ", with rtt " + str(RTT) + "s, lost seq: " + str(seqrange) + '\n')
+  log("at " + str(now) + ", with rtt " + str(RTT) + "s, seqrange (outstanding seq): " + str(seqrange) + '\n')
   log("recentobservedRTTs: " + str(recentobservedRTTs) + "\n")
   del oldestpktsendtime[0:len(oldestpktsendtime)]
 
@@ -262,14 +262,53 @@ def checkloss(now, RTT, recentobservedRTTs, packetsequence, seqrange):
 
   #log("packets older than " + str(now - RTT*2) + ': ' + str(oldseq) + '\n')
 
-  seqlimit = oldseq[-1]  # last/largest seq in lostseq
-  numlost = findlessthan(seqrange, seqlimit)  
+  if oldseq != []:
+    seqlimit = oldseq[-1]  # last/largest seq in lostseq
+    numlost = findlessthan(seqrange, seqlimit)  
 
-  if numlost != []:
-    log("num lost: " + str(numlost) + '\n\n')
-    # TODO: adjust rate
+    if numlost != []:
+      log("num lost (packets older than 2RTT): " + str(numlost) + '\n')
+      # TODO: adjust rate
 
-  # TODO: remove all numlost from packetsequence and seqrange
+    #logifdebug(1, "before update...seqrange:" + str(seqrange) + '\tpacketsequence:' + str(packetsequence))
+    
+    # Remove all numlost from packetsequence
+    for seq in numlost:
+      if int(seq) in packetsequence:
+        try:
+          del packetsequence[int(seq)]
+        except KeyError:
+          # possibily recvack got this seq's ack
+          log(seq + "th not in the sequence (recvack got this seq's ack?).\n")
+          pass
+
+    # Remove all seq's smaller than seqlimit from seqrange
+    for subrange in seqrange:      
+      index = seqrange.index(subrange)
+      if len(subrange) == 1:
+        right = subrange[0]
+        if right <= seqlimit:
+          seqrange[index] = []  #seqrange.remove(subrange)  
+          log("subrange-1: " + str(subrange[0]) + '...deleted\n')
+      else:  # len(subrange) == 2
+        left, right = subrange 
+        if right <= seqlimit:
+          seqrange[index] = []  #seqrange.remove(subrange)
+          log("subrange-2: " + str(subrange) + '...deleted\n')
+        else:  # right > seqlimit
+          if left <= seqlimit:  # left <= seqlimit < right
+            rangeinsert(seqlimit+1, right, seqrange, index)
+            log("subrange-3: " + str(subrange) + '...deleted\n')
+
+    emptyindex = []
+    for subrange in seqrange: 
+      if subrange == []:
+        emptyindex.append(seqrange.index(subrange))
+
+    for index in emptyindex:
+      del seqrange[index]
+
+    logifdebug(1, "seqlimit:" + str(seqlimit) + " updated seqrange:" + str(seqrange) + '\tpacketsequence:' + str(packetsequence) + '\n')
   
 
 def main():
