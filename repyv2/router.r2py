@@ -120,7 +120,7 @@ def addtoseqrange(seq, seqrange):
     
 
 def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
-  """addtoseqrange
+  """
   A closure that receives ack from the receiver, removes it from 
   packetsequence, and update the recently observed RTT
   """
@@ -165,10 +165,11 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
               RTT = estimateRTT(recentobservedRTTs)
 
             if oldestpktsendtime != [] and now - oldestpktsendtime[0] > 2*RTT:
-              log("now: " + str(now) + ", oldestpktsendtime: " + str(oldestpktsendtime) + ", 2*RTT: " + str(2*RTT) + '\n')
+              logifdebug(DEBUG, "now: " + str(now) + ", oldestpktsendtime: " + str(oldestpktsendtime) + ", 2*RTT: " + str(2*RTT) + '\n')
               listlock.acquire(True)
               checkloss(now, RTT, recentobservedRTTs, packetsequence, seqrange)
               listlock.release()
+              del oldestpktsendtime[0:len(oldestpktsendtime)]
               
           except KeyError:
             # at this point, checkRTT thread could delete this packet
@@ -212,9 +213,8 @@ def checkloss(now, RTT, recentobservedRTTs, packetsequence, seqrange):
   """
   When reaches WIN, check pkt loss
   """
-  log("at " + str(now) + ", with rtt " + str(RTT) + "s, seqrange (outstanding seq): " + str(seqrange) + '\n')
-  log("recentobservedRTTs: " + str(recentobservedRTTs) + "\n")
-  del oldestpktsendtime[0:len(oldestpktsendtime)]
+  logifdebug(DEBUG, "at " + str(now) + ", with rtt " + str(RTT) + "s, seqrange (outstanding seq): " + str(seqrange) + '\n')
+  logifdebug(DEBUG, "recentobservedRTTs: " + str(recentobservedRTTs) + "\n")
 
   oldseq = []
   for (id, sendtime) in packetsequence.items():
@@ -229,11 +229,8 @@ def checkloss(now, RTT, recentobservedRTTs, packetsequence, seqrange):
     numlost = findlessthan(seqrange, seqlimit)  
 
     if numlost != []:
-      log("num lost (packets older than 2RTT): " + str(numlost) + '\n')
-      # TODO: adjust rate
-    else:
-      log("num lost (packets older than 2RTT): None\n")
-      
+      logifdebug(DEBUG, "num lost (packets older than 2RTT): " + str(numlost) + '\n\n')
+      # TODO: adjust rate      
     
     # Remove all numlost from packetsequence
     for seq in numlost:
@@ -270,16 +267,74 @@ def checkloss(now, RTT, recentobservedRTTs, packetsequence, seqrange):
 
     #logifdebug(1, "seqlimit:" + str(seqlimit) + " updated seqrange: " + 
     #  str(seqrange) + '\tpacketsequence: ' + str(packetsequence) + '\n')
-  
+    
+  else:
+      logifdebug(DEBUG, "num lost (packets older than 2RTT): None\n\n")
+
+
+def sendpackets(sequenceno, packetsequence, seqrange):
+  """
+  Sends packets to the receiver.
+  """
+  totalbits = 0   # record total bytes received
+  totaltime = 0
+  lastchecktime = getruntime()   # record total time spent over a CYCLE 
+
+  while True: 
+    
+    #starttime = getruntime()  # record time before sending WIN packets
+    
+    # router sends a bunch of packets to the client
+    packet = str(sequenceno) + "|" + '0'*LENGTH 
+    #if sequenceno % N == 0:
+    timestamp = getruntime()  # record (seq, sendtime)
+    packetsequence[sequenceno] = timestamp
+
+    if oldestpktsendtime == []:
+      oldestpktsendtime.append([])
+      oldestpktsendtime[0] = timestamp
+      logifdebug(DEBUG, "oldestpktsendtime:" + str(oldestpktsendtime) + '\n')
+      
+    #logifdebug(DEBUG, "sending " + str(sequenceno) + "th packet at " + str(timestamp))
+    listlock.acquire(True)
+    addtoseqrange(sequenceno, seqrange)
+    listlock.release()
+    sendmessage(destip, destport, str(packet), localip, localport)
+    #logifdebug(DEBUG, "while send, " + str(seqrange) + '\t' + str(packetsequence))
+      
+    totalbits = totalbits + len(packet)*8
+    currenttime = getruntime()
+    totaltime = currenttime - lastchecktime
+    if totaltime > CYCLE:
+      # check throughput and movement every CYCLE sec
+      lastchecktime = currenttime # reset clock
+      throughput = float(totalbits)/(totaltime)/1000000 
+      log("send rate: " + str(throughput) + " Mbps\n\n")
+      totalbits = 0  # reset bits
+
+    sequenceno = sequenceno + 1
+      
+    #endtime = getruntime()  # record time after sending WIN packets
+
+    #logifdebug(DEBUG, "it took " + str(endtime-starttime) + " to send " + str(WIN)
+    #         + " pkts of " + str(LENGTH) + "bytes")
+    #sendtotal = 0
+
+    #if recentobservedRTTs != []:
+    #  sleeptime = estimateRTT(recentobservedRTTs)
+    #  log("sleeping " + str(sleeptime) + 'ms.\n')
+    #  sleep(sleeptime)
+
+    #if sequenceno % WIN == 0:        ####### beta!!!!!!!
+    #  del seqrange[0:len(seqrange)]  # reset sequence window and number        
+    #  packetsequence.clear()     # reset packet sequence 
+    #  sequenceno = 1
+    
 
 def main():
   """
   The main funciton..
   """
-
-  (localip, localport) = (getmyip(), 63100)
-  (destip, destport) = ('206.12.55.178', 63101)  # TODO: this needs to be phone's IP
-  log("my IP: " + localip + '\n')
 
   # router's socket for client's ack
   routerlistensocket = listenformessage(localip, localport)
@@ -289,66 +344,14 @@ def main():
   seqrange = []   # record outstanding packets
   packetsequence = {}
   recentobservedRTTs = []  # initially set to a large value
-  totalbits = 0   # record total bytes received
-  totaltime = 0
-  sendtotal = 0   # time to send WIN packets
+  #sendtotal = 0   # time to send WIN packets
 
   # thread that receives ack from the receiver, removes it from 
   # packetsequence, and update the recently observed RTT
   createthread(recvack(routerlistensocket, packetsequence, 
                      recentobservedRTTs, seqrange))
-
-  lastchecktime = getruntime()   # record total time spent over a CYCLE 
-
-  while True: 
-    
-    starttime = getruntime()  # record time before sending WIN packets
-    
-    # router sends a bunch of packets to the client
-    packet = str(sequenceno) + "|" + '0'*LENGTH 
-    #if sequenceno % N == 0:
-    timestamp = getruntime()  # record (seq, sendtime)
-    packetsequence[sequenceno] = timestamp
-
-    if oldestpktsendtime == []:
-        oldestpktsendtime.append([])
-        oldestpktsendtime[0] = timestamp
-        log("oldestpktsendtime:" + str(oldestpktsendtime) + '\n')
-      
-    logifdebug(DEBUG, "sending " + str(sequenceno) + "th packet at " + str(timestamp))
-    listlock.acquire(True)
-    addtoseqrange(sequenceno, seqrange)
-    listlock.release()
-    sendmessage(destip, destport, str(packet), localip, localport)
-    logifdebug(DEBUG, "while send, " + str(seqrange) + '\t' + str(packetsequence))
-      
-    totalbits = totalbits + len(packet)*8
-    currenttime = getruntime()
-    totaltime = currenttime - lastchecktime
-    if totaltime > CYCLE:
-        # check throughput and movement every CYCLE sec
-        lastchecktime = currenttime # reset clock
-        throughput = float(totalbits)/(totaltime)/1000000 
-        log("send rate: " + str(throughput) + " Mbps\n\n")
-        totalbits = 0  # reset bits
-
-    sequenceno = sequenceno + 1
-      
-    endtime = getruntime()  # record time after sending WIN packets
-
-    logifdebug(DEBUG, "it took " + str(endtime-starttime) + " to send " + str(WIN)
-             + " pkts of " + str(LENGTH) + "bytes")
-    sendtotal = 0
-
-    #if recentobservedRTTs != []:
-    #  sleeptime = estimateRTT(recentobservedRTTs)
-    #  log("sleeping " + str(sleeptime) + 'ms.\n')
-    #  sleep(sleeptime)
-
-    #del seqrange[0:len(seqrange)]  # reset sequence window and number        
-    #packetsequence.clear()     # reset packet sequence 
-    #sequenceno = 1
-
+ 
+  sendpackets(sequenceno, packetsequence, seqrange)
 
     
 ############ define protocol parameters ############   
@@ -362,5 +365,9 @@ CYCLE = 1  # time duration to calculate throughput
 
 listlock = createlock() # to sync data structure updates in different threads
 oldestpktsendtime = []   # record the time when the oldest pkt was sent
+
+(localip, localport) = (getmyip(), 63100)
+(destip, destport) = ('206.87.192.157', 63101)  # TODO: this needs to be phone's IP
+log("my IP: " + localip + '\n')
 
 main()
