@@ -12,8 +12,8 @@
   Router as the data sender, for the use case of rate adaptation.
 """
 
-from repyportability import *
-import cProfile, pstats, StringIO
+#from repyportability import *
+#import cProfile, pstats, StringIO
 
 
 def deserialize(message):      
@@ -135,8 +135,8 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
     """
 
     while True:
-      pr = cProfile.Profile()
-      pr.enable()
+        #pr = cProfile.Profile()
+        #pr.enable()
       
       try:
         # receive ack and movement hint from client
@@ -144,11 +144,11 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
         now = getruntime()
         (seq, move) = deserialize(message)  # TODO: use movement info 
 
-        logifdebug(DEBUG, "received " + seq + "th packet at " + str(now))
+        #logifdebug(DEBUG, "received " + seq + "th packet at " + str(now))
         listlock.acquire(True)
         delfromseqrange(int(seq), seqrange)
         listlock.release()
-        logifdebug(DEBUG, "while receive, " + str(seqrange) + '\t' + str(packetsequence))
+        #logifdebug(DEBUG, "while receive, " + str(seqrange) + '\t' + str(packetsequence))
       
         if int(seq) in packetsequence:
           sendtime = packetsequence[int(seq)]
@@ -191,12 +191,12 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
         pass
         #sleep(0.000001)
 
-      pr.disable()
-      s = StringIO.StringIO()
-      sortby = 'cumulative'
-      ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-      ps.print_stats()
-      print s.getvalue()
+        #pr.disable()
+        #s = StringIO.StringIO()
+        #sortby = 'cumulative'
+        #ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+        #ps.print_stats()
+        #print s.getvalue()
 
   return ack
 
@@ -286,12 +286,17 @@ def checkloss(now, RTT, recentobservedRTTs, packetsequence, seqrange):
       logifdebug(DEBUG, "num lost (packets older than 2RTT): None\n\n")
 
 
-def sendpackets(sequenceno, packetsequence, seqrange):
+def sendpackets(sequenceno, packetsequence, seqrange, rate):
   """
   Sends packets to the receiver.
   """
   totalbits = 0   # record total bytes received
   totaltime = 0
+  
+  interval = 0.000001  # sleep time between sends
+  numinterval = 0      # how many interval's to sleep
+  sleeptime = 0
+  throughput = 0       # initial rate is 0
   lastchecktime = getruntime()   # record total time spent over a CYCLE 
 
   while True: 
@@ -314,6 +319,16 @@ def sendpackets(sequenceno, packetsequence, seqrange):
     addtoseqrange(sequenceno, seqrange)
     listlock.release()
     sendmessage(destip, destport, str(packet), localip, localport)
+
+    if throughput > rate+1:
+      numinterval = numinterval + 1 
+    elif throughput < rate-1 and numinterval > 0:
+      numinterval = numinterval - 1
+
+    sleeptime = numinterval * interval      
+    if sequenceno % WIN == 0:
+      sleep(sleeptime)
+
     #logifdebug(DEBUG, "while send, " + str(seqrange) + '\t' + str(packetsequence))
       
     totalbits = totalbits + len(packet)*8
@@ -366,25 +381,29 @@ def main():
   # packetsequence, and update the recently observed RTT
   createthread(recvack(routerlistensocket, packetsequence, 
                      recentobservedRTTs, seqrange))
- 
-  sendpackets(sequenceno, packetsequence, seqrange)
+
+  rate = bitrate[0] # we need to adjust to this send rate
+  sendpackets(sequenceno, packetsequence, seqrange, rate)
 
 
 
 ############ define protocol parameters ############   
 LENGTH = 1000    # packet length (change for different tx rates)
 RTTWIN = 10      # check packet loss every RTTWIN ack
-WIN = 1000        # window size to check for packet loss
+WIN = 40        # window size to check for packet loss
 DEBUG = 0     # output some debug messages if DEBUG == 1 
               # TODO: make this a command line arg
 N = 10      # timestamp packets every Nth
-CYCLE = 1  # time duration to calculate throughput
+CYCLE = 0.1  # time duration to calculate throughput
+
+bitrate = [6, 9, 12, 18, 24, 36, 48, 54]  # bitrate (Mbps) for use in rate adjustment
+sleeprate = dict.fromkeys(bitrate)        # sleep time in order to get the bitrate above
 
 listlock = createlock() # to sync data structure updates in different threads
 oldestpktsendtime = []   # record the time when the oldest pkt was sent
 
 (localip, localport) = (getmyip(), 63100)
-(destip, destport) = ('206.87.192.157', 63101)  # TODO: this needs to be phone's IP
+(destip, destport) = ('206.87.194.113', 63101)  # TODO: this needs to be phone's IP
 log("my IP: " + localip + '\n')
       
 main()
