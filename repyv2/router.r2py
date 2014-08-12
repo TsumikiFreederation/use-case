@@ -12,6 +12,10 @@
   Router as the data sender, for the use case of rate adaptation.
 """
 
+from repyportability import *
+import cProfile, pstats, StringIO
+
+
 def deserialize(message):      
   """
   Returns the sequence of the packet, and movement hint.
@@ -131,6 +135,9 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
     """
 
     while True:
+      pr = cProfile.Profile()
+      pr.enable()
+      
       try:
         # receive ack and movement hint from client
         remoteip, remoteport, message = routerlistensocket.getmessage()
@@ -166,9 +173,9 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
 
             if oldestpktsendtime != [] and now - oldestpktsendtime[0] > 2*RTT:
               logifdebug(DEBUG, "now: " + str(now) + ", oldestpktsendtime: " + str(oldestpktsendtime) + ", 2*RTT: " + str(2*RTT) + '\n')
-              listlock.acquire(True)
+              #listlock.acquire(True)
               checkloss(now, RTT, recentobservedRTTs, packetsequence, seqrange)
-              listlock.release()
+              #listlock.release()
               del oldestpktsendtime[0:len(oldestpktsendtime)]
               
           except KeyError:
@@ -183,6 +190,13 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
       except SocketWouldBlockError:
         pass
         #sleep(0.000001)
+
+      pr.disable()
+      s = StringIO.StringIO()
+      sortby = 'cumulative'
+      ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+      ps.print_stats()
+      print s.getvalue()
 
   return ack
 
@@ -310,6 +324,8 @@ def sendpackets(sequenceno, packetsequence, seqrange):
       lastchecktime = currenttime # reset clock
       throughput = float(totalbits)/(totaltime)/1000000 
       log("send rate: " + str(throughput) + " Mbps\n\n")
+      #log("packetsequence: " + str(len(packetsequence)) + '\n')
+      #log("seqrange: " + str(len(seqrange)) + '\n')
       totalbits = 0  # reset bits
 
     sequenceno = sequenceno + 1
@@ -329,7 +345,7 @@ def sendpackets(sequenceno, packetsequence, seqrange):
     #  del seqrange[0:len(seqrange)]  # reset sequence window and number        
     #  packetsequence.clear()     # reset packet sequence 
     #  sequenceno = 1
-    
+
 
 def main():
   """
@@ -353,7 +369,8 @@ def main():
  
   sendpackets(sequenceno, packetsequence, seqrange)
 
-    
+
+
 ############ define protocol parameters ############   
 LENGTH = 1000    # packet length (change for different tx rates)
 RTTWIN = 10      # check packet loss every RTTWIN ack
@@ -369,5 +386,8 @@ oldestpktsendtime = []   # record the time when the oldest pkt was sent
 (localip, localport) = (getmyip(), 63100)
 (destip, destport) = ('206.87.192.157', 63101)  # TODO: this needs to be phone's IP
 log("my IP: " + localip + '\n')
-
+      
 main()
+#cProfile.run('main()')
+############ end of main() ############ 
+
