@@ -320,10 +320,10 @@ def sendpackets(sequenceno, packetsequence, seqrange, rate):
     listlock.release()
     sendmessage(destip, destport, str(packet), localip, localport)
 
-    if throughput > rate+1:
-      numinterval = numinterval + 1 
-    elif throughput < rate-1 and numinterval > 0:
-      numinterval = numinterval - 1
+    #if throughput > rate * 1.1:
+    #  numinterval = numinterval + 1 
+    #elif throughput < rate * 0.9 and numinterval > 0:
+    #  numinterval = numinterval - 1
 
     sleeptime = numinterval * interval      
     if sequenceno % WIN == 0:
@@ -351,16 +351,64 @@ def sendpackets(sequenceno, packetsequence, seqrange, rate):
     #         + " pkts of " + str(LENGTH) + "bytes")
     #sendtotal = 0
 
-    #if recentobservedRTTs != []:
-    #  sleeptime = estimateRTT(recentobservedRTTs)
-    #  log("sleeping " + str(sleeptime) + 'ms.\n')
-    #  sleep(sleeptime)
-
     #if sequenceno % WIN == 0:        ####### beta!!!!!!!
     #  del seqrange[0:len(seqrange)]  # reset sequence window and number        
     #  packetsequence.clear()     # reset packet sequence 
     #  sequenceno = 1
 
+
+def benchmarking(sequenceno):
+  """
+  A for every sleep time, estimate the average throughput.
+  """
+  totalbits = 0   # record total bytes received
+  totaltime = 0
+  
+  interval = 0.00001  # sleep time between sends
+  numinterval = 0      # how many interval's to sleep
+  sleeptime = 0
+  throughput = 0       # initial rate is 0
+  lastchecktime = getruntime()   # record total time spent over a CYCLE 
+  count = 0   # num of times to measure the sending rate with the same sleep time
+  REPEAT = 10 # max of count
+  sendingrate = []
+  timeratemap = {}
+
+  while True:
+    #if count == 0:
+    #  log("sleeptime: " + str(sleeptime) + "sec\n")
+      
+    packet = str(sequenceno) + "|" + '0'*LENGTH 
+    sendmessage(destip, destport, str(packet), localip, localport)
+    
+    sleeptime = numinterval * interval      
+    sleep(sleeptime)
+      
+    totalbits = totalbits + len(packet)*8
+    currenttime = getruntime()
+    totaltime = currenttime - lastchecktime
+    
+    if totaltime > CYCLE:
+      # check throughput and movement every CYCLE sec
+      if count < REPEAT:      
+        count = count + 1
+        lastchecktime = currenttime # reset clock
+        throughput = float(totalbits)/(totaltime)/1000000 
+        sendingrate.append(throughput)
+        log("send rate: " + str(throughput) + " Mbps\n")
+        totalbits = 0  # reset bits
+      else: # count == REPEAT:
+        avgrate = sum(sendingrate)/len(sendingrate)
+        log("sleeptime: " + str(sleeptime) + "sec\t avg throughput: " 
+            + str(avgrate) + " Mbps\n")
+        timeratemap[sleeptime] = avgrate
+        log("timeratemap: " + str(timeratemap) + "\n\n")
+        del sendingrate[0:len(sendingrate)]
+        count = 0
+        numinterval = numinterval + 1
+
+    sequenceno = sequenceno + 1    
+  
 
 def main():
   """
@@ -382,8 +430,10 @@ def main():
   createthread(recvack(routerlistensocket, packetsequence, 
                      recentobservedRTTs, seqrange))
 
-  rate = bitrate[0] # we need to adjust to this send rate
-  sendpackets(sequenceno, packetsequence, seqrange, rate)
+  # we need to adjust to this send rate
+  benchmarking(sequenceno)
+  
+  #sendpackets(sequenceno, packetsequence, seqrange, rate)
 
 
 
@@ -394,7 +444,7 @@ WIN = 40        # window size to check for packet loss
 DEBUG = 0     # output some debug messages if DEBUG == 1 
               # TODO: make this a command line arg
 N = 10      # timestamp packets every Nth
-CYCLE = 0.1  # time duration to calculate throughput
+CYCLE = 1  # time duration to calculate throughput
 
 bitrate = [6, 9, 12, 18, 24, 36, 48, 54]  # bitrate (Mbps) for use in rate adjustment
 sleeprate = dict.fromkeys(bitrate)        # sleep time in order to get the bitrate above
@@ -407,6 +457,5 @@ oldestpktsendtime = []   # record the time when the oldest pkt was sent
 log("my IP: " + localip + '\n')
       
 main()
-#cProfile.run('main()')
 ############ end of main() ############ 
 
