@@ -32,7 +32,8 @@ def estimateRTT(recentobservedRTTs):
   """
   Returns the max value of recent RTTs
   """
-  return max(recentobservedRTTs)
+  #return max(recentobservedRTTs)
+  return sum(recentobservedRTTs)/len(recentobservedRTTs)
 
 
 def logifdebug(DEBUG, string):
@@ -135,8 +136,6 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
     """
 
     while True:
-        #pr = cProfile.Profile()
-        #pr.enable()
       
       try:
         # receive ack and movement hint from client
@@ -173,13 +172,12 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
 
             if oldestpktsendtime != [] and now - oldestpktsendtime[0] > 2*RTT:
               logifdebug(DEBUG, "now: " + str(now) + ", oldestpktsendtime: " + str(oldestpktsendtime) + ", 2*RTT: " + str(2*RTT) + '\n')
-              #listlock.acquire(True)
+              listlock.acquire(True)
               checkloss(now, RTT, recentobservedRTTs, packetsequence, seqrange)
-              #listlock.release()
+              listlock.release()
               del oldestpktsendtime[0:len(oldestpktsendtime)]
               
           except KeyError:
-            # at this point, checkRTT thread could delete this packet
             log(seq + "th not in the sequence (already timeout?).\n")
             pass
             
@@ -190,13 +188,6 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
       except SocketWouldBlockError:
         pass
         #sleep(0.000001)
-
-        #pr.disable()
-        #s = StringIO.StringIO()
-        #sortby = 'cumulative'
-        #ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-        #ps.print_stats()
-        #print s.getvalue()
 
   return ack
 
@@ -221,13 +212,13 @@ def findlessthan(seqrange, seqlimit):
 
   return lostseq
 
-
-
+    
 def checkloss(now, RTT, recentobservedRTTs, packetsequence, seqrange):
   """
   When reaches WIN, check pkt loss
   """
-  logifdebug(DEBUG, "at " + str(now) + ", with rtt " + str(RTT) + "s, seqrange (outstanding seq): " + str(seqrange) + '\n')
+  logifdebug(DEBUG, "at " + str(now) + ", with rtt " + str(RTT) + 
+             "s, seqrange (outstanding seq): " + str(seqrange) + '\n')
   logifdebug(DEBUG, "recentobservedRTTs: " + str(recentobservedRTTs) + "\n")
 
   oldseq = []
@@ -242,9 +233,45 @@ def checkloss(now, RTT, recentobservedRTTs, packetsequence, seqrange):
     seqlimit = oldseq[-1]  # last/largest seq in lostseq
     numlost = findlessthan(seqrange, seqlimit)  
 
+    sample = 0 
+    oldbr = zzz[0]
+    br = 0
+
+    ###################### rate adjust starts ######################
     if numlost != []:
-      logifdebug(DEBUG, "num lost (packets older than 2RTT): " + str(numlost) + '\n\n')
-      # TODO: adjust rate      
+      # loss happened, slow down
+      
+      #logifdebug(DEBUG, "num lost (packets older than 2RTT): " + str(numlost) + '\n\n')
+      for num in numlost:
+        if int(num) in packetsequence:
+          sendtime = packetsequence[int(num)]
+          #log(str(num) + " lost " + str((now - sendtime)*1000) + "ms ago.\n")
+          failedTime[zzz[0]] = now 
+          if sample == 1:
+            br = oldbr
+          else:
+            br = min(zzz[0]+0.01/1000, max(sleeptime)) # 0.01: arbitrary number?
+            sample = 0
+              
+    else: 
+      # no loss, speed up
+      sample = 0
+      if now - pickedTime[zzz[0]] > 0.005:
+        for tau in sleeptime:
+          if now - failedTime[tau] > 0.01:
+            br = tau
+            break 
+          
+        sample = 1
+        oldbr = br
+      else:
+        br = zzz[0]
+
+    if br != zzz[0]:
+      pickedTime[br] = now
+      
+    zzz[0] = br
+    ###################### rate adjust ends ######################
     
     # Remove all numlost from packetsequence
     for seq in numlost:
@@ -285,8 +312,9 @@ def checkloss(now, RTT, recentobservedRTTs, packetsequence, seqrange):
   else:
       logifdebug(DEBUG, "num lost (packets older than 2RTT): None\n\n")
 
+      
 
-def sendpackets(sequenceno, packetsequence, seqrange, rate):
+def sendpackets(sequenceno, packetsequence, seqrange):
   """
   Sends packets to the receiver.
   """
@@ -319,17 +347,11 @@ def sendpackets(sequenceno, packetsequence, seqrange, rate):
     addtoseqrange(sequenceno, seqrange)
     listlock.release()
     sendmessage(destip, destport, str(packet), localip, localport)
-
-    #if throughput > rate * 1.1:
-    #  numinterval = numinterval + 1 
-    #elif throughput < rate * 0.9 and numinterval > 0:
-    #  numinterval = numinterval - 1
-
-    sleeptime = numinterval * interval      
-    if sequenceno % WIN == 0:
-      sleep(sleeptime)
-
     #logifdebug(DEBUG, "while send, " + str(seqrange) + '\t' + str(packetsequence))
+    
+    sleep(zzz[0])  # sleep for zzz ms
+    #if sequenceno % 1000 == 0:
+    #  log("zzzzzzzzzz.....for " + str(zzz[0]) + "sec.\n")
       
     totalbits = totalbits + len(packet)*8
     currenttime = getruntime()
@@ -351,37 +373,55 @@ def sendpackets(sequenceno, packetsequence, seqrange, rate):
     #         + " pkts of " + str(LENGTH) + "bytes")
     #sendtotal = 0
 
-    #if sequenceno % WIN == 0:        ####### beta!!!!!!!
+    #if sequenceno % WIN == 0:        
     #  del seqrange[0:len(seqrange)]  # reset sequence window and number        
     #  packetsequence.clear()     # reset packet sequence 
     #  sequenceno = 1
 
 
+def generatecsv(file, timeratemap):
+  """
+  Output timeratemap to a CSV file.
+  """
+  
+  filestring = file + ".csv"
+  if filestring in listfiles():
+    removefile(filestring)
+    
+  myfileobject = openfile(filestring, True)
+  writestring = "sleep time (ms), send rate (Mbps) \n"
+
+  for sleeptime in timeratemap:       
+     writestring = writestring + str(sleeptime) + ", "
+     writestring = writestring + str(timeratemap[sleeptime]) + " \n"           
+
+  writestring = writestring + "\n"                   
+  myfileobject.writeat(writestring, 0)
+  myfileobject.close() 
+
+    
+
 def benchmarking(sequenceno):
   """
-  A for every sleep time, estimate the average throughput.
+  For every sleep time, estimate the average throughput.
   """
   totalbits = 0   # record total bytes received
   totaltime = 0
   
-  interval = 0.00001  # sleep time between sends
+  intval = 0.0001   # constant time interval
   numinterval = 0      # how many interval's to sleep
   sleeptime = 0
   throughput = 0       # initial rate is 0
-  lastchecktime = getruntime()   # record total time spent over a CYCLE 
   count = 0   # num of times to measure the sending rate with the same sleep time
   REPEAT = 10 # max of count
   sendingrate = []
   timeratemap = {}
+  lastchecktime = getruntime()   # record total time spent over a CYCLE 
 
-  while True:
-    #if count == 0:
-    #  log("sleeptime: " + str(sleeptime) + "sec\n")
-      
+  while True:      
     packet = str(sequenceno) + "|" + '0'*LENGTH 
-    sendmessage(destip, destport, str(packet), localip, localport)
-    
-    sleeptime = numinterval * interval      
+    sendmessage(destip, destport, str(packet), localip, localport)     
+    sleeptime = numinterval * intval  
     sleep(sleeptime)
       
     totalbits = totalbits + len(packet)*8
@@ -399,15 +439,23 @@ def benchmarking(sequenceno):
         totalbits = 0  # reset bits
       else: # count == REPEAT:
         avgrate = sum(sendingrate)/len(sendingrate)
-        log("sleeptime: " + str(sleeptime) + "sec\t avg throughput: " 
+        log("sleeptime: " + str(sleeptime*1000) + "ms\t avg send rate: " 
             + str(avgrate) + " Mbps\n")
-        timeratemap[sleeptime] = avgrate
-        log("timeratemap: " + str(timeratemap) + "\n\n")
+        timeratemap[sleeptime*1000] = avgrate  # store sleeptime in ms
+          
+        if avgrate < 6: # 6Mbps is the lowest rate
+          break
+          
+        #log("timeratemap: " + str(timeratemap) + "\n\n")
         del sendingrate[0:len(sendingrate)]
-        count = 0
+        count = 0        
         numinterval = numinterval + 1
 
-    sequenceno = sequenceno + 1    
+    sequenceno = sequenceno + 1  
+
+  generatecsv("benchmarking", timeratemap)
+
+  return timeratemap
   
 
 def main():
@@ -431,29 +479,33 @@ def main():
                      recentobservedRTTs, seqrange))
 
   # we need to adjust to this send rate
-  benchmarking(sequenceno)
-  
-  #sendpackets(sequenceno, packetsequence, seqrange, rate)
+  #timeratemap = benchmarking(sequenceno)
+
+  zzz[0] = 0/1000
+  sendpackets(sequenceno, packetsequence, seqrange)
 
 
 
 ############ define protocol parameters ############   
 LENGTH = 1000    # packet length (change for different tx rates)
 RTTWIN = 10      # check packet loss every RTTWIN ack
-WIN = 40        # window size to check for packet loss
+WIN = 10        # window size to check for packet loss
 DEBUG = 0     # output some debug messages if DEBUG == 1 
               # TODO: make this a command line arg
 N = 10      # timestamp packets every Nth
 CYCLE = 1  # time duration to calculate throughput
+pickedTime = {}
+failedTime = {}
 
-bitrate = [6, 9, 12, 18, 24, 36, 48, 54]  # bitrate (Mbps) for use in rate adjustment
-sleeprate = dict.fromkeys(bitrate)        # sleep time in order to get the bitrate above
+sleeptime = [0, 0.1/1000, 0.2/1000, 0.3/1000, 0.4/1000, 0.5/1000, 
+             0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1/1000]  # hard coded
+zzz = [0]    # global variable that controls sleeping time!!
 
 listlock = createlock() # to sync data structure updates in different threads
 oldestpktsendtime = []   # record the time when the oldest pkt was sent
 
 (localip, localport) = (getmyip(), 63100)
-(destip, destport) = ('206.87.194.113', 63101)  # TODO: this needs to be phone's IP
+(destip, destport) = ('206.87.194.245', 63101)  # TODO: this needs to be phone's IP
 log("my IP: " + localip + '\n')
       
 main()
