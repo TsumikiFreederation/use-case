@@ -1,0 +1,227 @@
+"""
+<Program Name>
+  staticrouter.r2py
+
+<Started>
+  Aug 15, 2014
+
+<Author>
+  Yanyan Zhuang
+
+<Purpose>
+  Router as the data sender, for the use case of rate adaptation.
+"""
+
+#from repyportability import *
+
+
+def deserialize(message):      
+  """
+  Returns the sequence of the packet, and movement hint.
+  """
+  if "|" in message:
+    seq, move = message.split("|")
+  else:
+    seq = message
+    move = None
+  return (seq, move)
+
+
+def logifdebug(DEBUG, string):
+  """
+  Prints out string if DEBUG == 1.
+  """
+  if DEBUG == 1:
+    log(string + '\n')
+  else: 
+    return 
+                  
+
+def updatestats(rate, seq, now, packetsequence):
+  """
+  Update link statistics everytime receives a packet.
+  """ 
+  if int(seq) in packetsequence:
+      
+    sendtime = packetsequence[int(seq)]
+    newrtt = now - sendtime  # transmission time
+    stats[rate].append((seq, sendtime, newrtt))
+    
+    try:  # delete seq upon ack
+      del packetsequence[int(seq)] 
+    except KeyError:
+      log(seq + "th not in the sequence (already timeout?).\n")
+      pass
+
+  else:
+    log(seq + "th pkt is received before sent, or has been deleted due to timeout.\n") 
+    pass
+
+def resetstats():
+  """
+  Reset link statistics every CYCLE sec (remove info older than
+  CYCLE sec).
+  """
+  return
+
+
+def existconsequtivelosses(rate, n):
+  """
+  Find if there are n consequtive losses when using rate.
+  """
+  return
+  
+      
+def selectpermrate(n, m):
+  """
+  Select the highest rate without n successive failures 
+  in the past m sec.
+  """
+  return
+
+
+def selecttemprate(n, currentrate):
+  """
+  Select a random rate that (1) has not failed n successive 
+  times and (2) have a minimum transmission time lower than 
+  the currentrate's average transmission time.
+  """
+  return
+
+
+def selectlowesttxtime():
+  """
+  Select a rate that has the lowest average tx time.
+  """
+  return
+
+  
+def ispermanent(seq):
+  """
+  Return if a packet seq # is permanent or not.
+  """
+  if seq % WINSIZE in PERMWIN:
+    return 1
+  elif seq % WINSIZE in TEMPWIN:
+    return 0
+  else: 
+    log("something went wrong when checking packet ispermanent...\n")
+      
+    
+def recvack(routerlistensocket, packetsequence):
+  """
+  A closure that receives ack from the receiver, removes it from 
+  packetsequence, and update the recently observed RTT
+  """
+  
+  def ack():      
+    """
+    Inside of the closure
+    """
+
+    while True:      
+      try:
+        # receive ack and movement hint from client
+        remoteip, remoteport, message = routerlistensocket.getmessage()
+        now = getruntime()
+        (seq, move) = deserialize(message)  # TODO: use movement info 
+
+        # z[0] is the global var indicating current rate
+        updatestats(zzz[0], seq, now, packetsequence) 
+                       
+      except SocketWouldBlockError:
+        pass
+
+  return ack
+
+
+def sendpackets(sequenceno, packetsequence):
+  """
+  Sends packets to the receiver.
+  """
+  
+  lastchecktime = getruntime()   # record total time spent over a CYCLE
+    
+  while True:   
+    packet = str(sequenceno) + "|" + '0'*LENGTH 
+
+    # update data structures
+    timestamp = getruntime()  # record (seq, sendtime)
+    packetsequence[sequenceno] = timestamp      
+
+    # only when there's loss do we seclect a new rate
+    if existconsequtivelosses(zzz[0], 4):
+      if ispermanent(sequenceno % WINSIZE):
+        # select the highest rate with no 4 successive failures
+        # in the past 10 sec, assign to current rate
+        zzz[0] = selectpermrate(4, 10)  
+      else: # temp packet
+        # select a random rate that (1) has not failed 4 successive 
+        # times and (2) have a minimum transmission time lower than 
+        # the currentrate's average transmission time. 
+        zzz[0] = selecttemprate(4, zzz[0])
+
+      if zzz[0] == None:
+        # if both above failed, select a rate with the lowest average tx time
+        zzz[0] = selectlowesttxtime()
+        
+    sendmessage(destip, destport, str(packet), localip, localport)
+    sleep(zzz[0])  # sleep for zzz sec
+    sequenceno = sequenceno + 1
+
+    currenttime = getruntime()
+    totaltime = currenttime - lastchecktime
+    if totaltime > CYCLE:
+      # reset success/failues every CYCLE sec
+      lastchecktime = currenttime # reset clock
+      #log(str(stats) + '\n')
+      resetstats()
+  
+
+def main():
+  """
+  The main funciton.
+  """
+
+  # router's socket for client's ack
+  routerlistensocket = listenformessage(localip, localport)
+
+  # initial variables
+  sequenceno = 1   # sequence number of packets, starting from 1
+  packetsequence = {} 
+  zzz[0] = sleeptime[0] # select highest rate    
+
+  createthread(recvack(routerlistensocket, packetsequence))
+
+  sendpackets(sequenceno, packetsequence)
+
+
+
+############ define protocol parameters ############   
+LENGTH = 1000    # packet length (change for different tx rates)
+DEBUG = 0     # output some debug messages if DEBUG == 1 
+CYCLE = 10    # time duration to delete old data entries
+WINSIZE = 1000
+PERMWIN = range(0, 900)  # when seq%WINSIZE falls in this rage, the packet is permanent
+TEMPWIN = range(900, WINSIZE)
+
+sleeptime = [0, 0.1/1000, 0.2/1000, 0.3/1000, 0.4/1000, 0.5/1000, 
+             0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1/1000]  # hard coded
+zzz = [0]    # global variable that controls sleeping time!!
+stats = {}
+
+for rate in sleeptime:  
+  # initialize data struct for link stats: each 'rate' entry
+  # is a list [(seq, sendtime, rtt), (seq, sendtime, rtt), ...]
+  stats[rate] = []  
+    
+listlock = createlock() # to sync data structure updates in different threads
+
+(localip, localport) = (getmyip(), 63100)
+(destip, destport) = ('206.87.199.127', 63101)  # this needs to be phone's IP
+
+log("my IP: " + localip + '\n')
+
+main()
+############ end of main() ############ 
+
