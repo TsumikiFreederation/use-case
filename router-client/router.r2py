@@ -12,6 +12,10 @@
   Router as the data sender, for the use case of rate adaptation.
 """
 
+#from repyportability import *
+#import cProfile, pstats, StringIO
+
+
 def deserialize(message):      
   """
   Returns the sequence of the packet, and movement hint.
@@ -28,7 +32,8 @@ def estimateRTT(recentobservedRTTs):
   """
   Returns the max value of recent RTTs
   """
-  return max(recentobservedRTTs)
+  #return max(recentobservedRTTs)
+  return sum(recentobservedRTTs)/len(recentobservedRTTs)
 
 
 def logifdebug(DEBUG, string):
@@ -46,29 +51,35 @@ def rangeinsert(first, second, seqrange, index):
   Depending on the values of first, second, 
   insert the correct range in seqrange at index.
   """
+  if index == len(seqrange):
+    seqrange.append([])
+    
   if first == second:
-    seqrange.insert(index, [first])
+    #seqrange.insert(index, [first])
+    seqrange[index] = [first]
   else:
-    seqrange.insert(index, [first, second])
+    #seqrange.insert(index, [first, second])
+    seqrange[index] = [first, second]
               
 
 def delfromseqrange(seq, seqrange):
   """
   Delete seq from the sequence range. Add new range if necessary.
   """
+  
   for subrange in seqrange:      
     index = seqrange.index(subrange)
+    #log(str(index) + ": " + str(subrange) + "\n")
 
     if len(subrange) == 1:
-        if seq == subrange[0]:
-          seqrange.remove(subrange)  
+      if seq == subrange[0]:
+        seqrange.remove(subrange)  
     else:
       left, right = subrange 
       if right >= seq:
-        seqrange.remove(subrange)        
+        #seqrange.remove(subrange)        
         if right == seq:  # change to [left, right-1] 
-          rangeinsert(left, right-1, seqrange, index)
-          
+          rangeinsert(left, right-1, seqrange, index)         
         else: # right > seq
           if left == seq:  # change to [left+1, right]
             rangeinsert(left+1, right, seqrange, index)
@@ -82,7 +93,36 @@ def delfromseqrange(seq, seqrange):
       else: # none of the above cases
         continue
 
-      
+
+def addtoseqrange(seq, seqrange):
+  """
+  Add seq to the sequence range. 
+  """
+ 
+  if seqrange == []:
+    seqrange.append([seq])
+  else:      
+    for subrange in seqrange[::-1]:         
+      index = seqrange.index(subrange)
+
+      if len(subrange) == 1:  
+        right = subrange[0]
+        left = right
+      else: # len(subrange) == 2
+        left, right = subrange 
+
+      if right > seq:  # this case shouldn't exist: send 12 before 11
+        continue        
+
+      if right < seq - 1:  # [[1,3], [5,7], [10]]: now send seq 12
+        seqrange.append([seq])   # [[1,3], [5,7], [10], [12]]
+      elif right == seq - 1:  # [[1,3], [5,7], [10]]: now send seq 11
+        #seqrange.remove(subrange)
+        #seqrange.append([left, seq])  # [[1,3], [5,7], [10,11]]
+        seqrange[index] = [left, seq]
+
+      break
+    
 
 def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
   """
@@ -96,175 +136,280 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
     """
 
     while True:
+      
       try:
         # receive ack and movement hint from client
         remoteip, remoteport, message = routerlistensocket.getmessage()
-        recvtime = getruntime()
+        now = getruntime()
         (seq, move) = deserialize(message)  # TODO: use movement info 
 
-        logifdebug(DEBUG, "received " + seq + "th packet at " + str(recvtime))
+        #logifdebug(DEBUG, "received " + seq + "th packet at " + str(now))
+        listlock.acquire(True)
         delfromseqrange(int(seq), seqrange)
-        logifdebug(DEBUG, str(seqrange))
-             
+        listlock.release()
+        #logifdebug(DEBUG, "while receive, " + str(seqrange) + '\t' + str(packetsequence))
+      
         if int(seq) in packetsequence:
           sendtime = packetsequence[int(seq)]
           # delete seq upon ack
           try:
             del packetsequence[int(seq)]           
             # if del throws KeyError, the rest from here in the try block will be skipped
-            rtt = recvtime - sendtime
-            logifdebug(DEBUG, seq + "th pkt received. send time: " + str(sendtime) + 
-                "  receive time: " + str(recvtime) + "  rtt: " + str(rtt) 
-                + ". seq queue: " + str(packetsequence) + ", outstanding " + str(seqrange)) 
+            #logifdebug(1, str(seqrange) + '\t' + str(packetsequence))
+            newrtt = now - sendtime
+            #logifdebug(DEBUG, seq + "th pkt received. send time: " + str(sendtime) + 
+            #    "  receive time: " + str(now) + "  rtt: " + str(newrtt) 
+            #    + ". seq queue: " + str(packetsequence) + ", outstanding " + str(seqrange)) 
 
             # update RTT
-            recentobservedRTTs.append(rtt)
+            recentobservedRTTs.append(newrtt)
             if len(recentobservedRTTs) > RTTWIN: # only keep RTTWIN most recent RTTs
               recentobservedRTTs.pop(0)
 
-            logifdebug(DEBUG, "recentobservedRTTs: " + str(recentobservedRTTs) + "\n")
+            #logifdebug(DEBUG, "recentobservedRTTs: " + str(recentobservedRTTs) + "\n")
+            if recentobservedRTTs != []:
+              RTT = estimateRTT(recentobservedRTTs)
+
+            if oldestpktsendtime != [] and now - oldestpktsendtime[0] > 2*RTT:
+              #logifdebug(DEBUG, "now: " + str(now) + ", oldestpktsendtime: " + str(oldestpktsendtime) + ", 2*RTT: " + str(2*RTT) + '\n')
+              listlock.acquire(True)
+              checkloss(now, RTT, recentobservedRTTs, packetsequence, seqrange)
+              listlock.release()
+              del oldestpktsendtime[0:len(oldestpktsendtime)]
               
           except KeyError:
-            # at this point, checkRTT thread could delete this packet
             log(seq + "th not in the sequence (already timeout?).\n")
             pass
             
         else:
-          log(seq + "th pkt is received before sent, or has been deleted due to timeout.\n")                
+          #log(seq + "th pkt is received before sent, or has been deleted due to timeout.\n") 
+          pass               
 
       except SocketWouldBlockError:
         pass
+        #sleep(0.000001)
 
   return ack
 
 
-def expiresentpackets(recentobservedRTTs, packetsequence):
+
+def findlessthan(seqrange, seqlimit):
   """
-  A closure that checks if a packet in packetsequence has
-  timed out.
+  Find in seqrange all the seq numbers that are less than seqlimit.
   """
-  
-  def rtt():
-    """
-    Inside of the closure
-    """
-  
-    while True:
-      if len(recentobservedRTTs) < RTTWIN: # need at least RTTWIN pkts
-        continue 
+  lostseq = []
 
-      delseq = []
-      updatedRTT = estimateRTT(recentobservedRTTs)
-      for (id, sendtime) in packetsequence.items():
-        if sendtime < getruntime() - updatedRTT*2:
-          # if a packet was sent more than twice 
-          # RTT ago, then it's considered timed out
-          logifdebug(DEBUG, str(id) + "th packet too old...need to delete")
-          delseq.append(id)
+  for subrange in seqrange:
+    if len(subrange) == 1:
+      left = subrange[0]
+      if left <= seqlimit:
+        lostseq.append(left)
+    else:  # len(subrange) == 2
+      left, right = subrange
+      for num in range(left, right+1):
+        if num <= seqlimit:
+          lostseq.append(num)
 
-      for i in delseq:
-        try:
-          del packetsequence[i]
-        except KeyError:
-          # at this point, previously recorded id could already  
-          # be deleted by the recvack thread
-          log(str(i) + "th not in the sequence (already received?).\n")
-          pass
+  return lostseq
 
-      logifdebug(DEBUG, "after checkRTT, sequence: " + str(packetsequence))
-
-      sleep(updatedRTT*2)
-
-  return rtt
-
-
-def checkloss(seqrange):
+    
+def checkloss(now, RTT, recentobservedRTTs, packetsequence, seqrange):
   """
   When reaches WIN, check pkt loss
   """
-  log("after sending " + str(WIN) + " packets, lost seq: " + str(seqrange) + '\n')
+  #logifdebug(DEBUG, "at " + str(now) + ", with rtt " + str(RTT) + 
+  #           "s, seqrange (outstanding seq): " + str(seqrange) + '\n')
+  #logifdebug(DEBUG, "recentobservedRTTs: " + str(recentobservedRTTs) + "\n")
 
+  oldseq = []
+  for (id, sendtime) in packetsequence.items():
+    if sendtime < now - RTT*2:
+      # if a packet was sent more than 2*RTT ago, it's considered lost
+      oldseq.append(id)
+
+  #log("packets older than " + str(now - RTT*2) + ': ' + str(oldseq) + '\n')
+
+  if oldseq != []:
+    seqlimit = oldseq[-1]  # last/largest seq in lostseq
+    numlost = findlessthan(seqrange, seqlimit)  
+
+    sample = 0 
+    oldbr = zzz[0]
+    br = 0
+
+    ###################### rate adjust starts ######################
+    """if numlost != []:
+      # loss happened, slow down
+      
+      #logifdebug(DEBUG, "num lost (packets older than 2RTT): " + str(numlost) + '\n\n')
+      for num in numlost:
+        if int(num) in packetsequence:
+          sendtime = packetsequence[int(num)]
+          #log(str(num) + " lost " + str((now - sendtime)*1000) + "ms ago.\n")
+          failedTime[zzz[0]] = now 
+          if sample == 1:
+            br = oldbr
+          else:
+            br = min(zzz[0]+0.01/1000, max(sleeptime)) # 0.01: arbitrary number?
+            sample = 0
+              
+    else: 
+      # no loss, speed up
+      sample = 0
+      if now - pickedTime[zzz[0]] > 0.05:
+        for tau in sleeptime:
+          if now - failedTime[tau] > 0.1:
+            br = tau
+            break 
+          
+        sample = 1
+        oldbr = br
+      else:
+        br = zzz[0]
+
+    if br != zzz[0]:
+      pickedTime[br] = now
+      
+    zzz[0] = br"""
+    ###################### rate adjust ends ######################
+    
+    # Remove all numlost from packetsequence
+    for seq in numlost:
+      if int(seq) in packetsequence:
+        try:
+          del packetsequence[int(seq)]
+        except KeyError:
+          # possibily recvack got this seq's ack
+          log(seq + "th not in the sequence (recvack got this seq's ack?).\n")
+          pass
+
+    # Remove all seq's smaller than seqlimit from seqrange
+    for subrange in seqrange:      
+      index = seqrange.index(subrange)
+      if len(subrange) == 1:
+        right = subrange[0]
+        if right <= seqlimit:
+          seqrange[index] = []  #seqrange.remove(subrange)  
+      else:  # len(subrange) == 2
+        left, right = subrange 
+        if right <= seqlimit:
+          seqrange[index] = []  #seqrange.remove(subrange)
+        else:  # right > seqlimit
+          if left <= seqlimit:  # left <= seqlimit < right
+            rangeinsert(seqlimit+1, right, seqrange, index)
+
+    emptyindex = []
+    for subrange in seqrange: 
+      if subrange == []:
+        emptyindex.append(seqrange.index(subrange))
+
+    for index in emptyindex:
+      del seqrange[index]
+
+    #logifdebug(1, "seqlimit:" + str(seqlimit) + " updated seqrange: " + 
+    #  str(seqrange) + '\tpacketsequence: ' + str(packetsequence) + '\n')
+    
+  else:
+      logifdebug(DEBUG, "num lost (packets older than 2RTT): None\n\n")
+
+      
+
+def sendpackets(sequenceno, packetsequence, seqrange):
+  """
+  Sends packets to the receiver.
+  """
+  totalbits = 0   # record total bytes received
+  totaltime = 0
+  
+  interval = 0.000001  # sleep time between sends
+  numinterval = 0      # how many interval's to sleep
+  sleeptime = 0
+  throughput = 0       # initial rate is 0
+  lastchecktime = getruntime()   # record total time spent over a CYCLE 
+
+  while True: 
+    
+    # router sends a bunch of packets to the client
+    packet = str(sequenceno) + "|" + '0'*LENGTH 
+    #if sequenceno % N == 0:
+    timestamp = getruntime()  # record (seq, sendtime)
+    packetsequence[sequenceno] = timestamp
+
+    if oldestpktsendtime == []:
+      oldestpktsendtime.append([])
+      oldestpktsendtime[0] = timestamp
+      logifdebug(DEBUG, "oldestpktsendtime:" + str(oldestpktsendtime) + '\n')
+      
+    #logifdebug(DEBUG, "sending " + str(sequenceno) + "th packet at " + str(timestamp))
+    listlock.acquire(True)
+    addtoseqrange(sequenceno, seqrange)
+    listlock.release()
+    sendmessage(destip, destport, str(packet), localip, localport)
+    #logifdebug(DEBUG, "while send, " + str(seqrange) + '\t' + str(packetsequence))
+    
+    sleep(zzz[0])  # sleep for zzz ms
+      
+    totalbits = totalbits + len(packet)*8
+    currenttime = getruntime()
+    totaltime = currenttime - lastchecktime
+    if totaltime > CYCLE:
+      # check throughput and movement every CYCLE sec
+      lastchecktime = currenttime # reset clock
+      throughput = float(totalbits)/(totaltime)/1000000 
+      log("send rate: " + str(throughput) + " Mbps\n")
+      #log("packetsequence: " + str(len(packetsequence)) + '\n')
+      #log("seqrange: " + str(len(seqrange)) + '\n')
+      totalbits = 0  # reset bits
+
+    sequenceno = sequenceno + 1
+  
 
 def main():
   """
   The main funciton..
   """
 
-  (localip, localport) = (getmyip(), 63100)
-  (destip, destport) = ('206.12.54.53', 63101)  # TODO: this needs to be phone's IP
-  log("my IP: " + localip + '\n')
-
   # router's socket for client's ack
   routerlistensocket = listenformessage(localip, localport)
-  seqrange = [[1, WIN]]   # record sent/outstanding packets
-  sequenceno = 1   # sequence number of packets, starting from 1 to WIN
-  
+
   # initial variables
+  sequenceno = 1   # sequence number of packets, starting from 1 to WIN
+  seqrange = []   # record outstanding packets
   packetsequence = {}
   recentobservedRTTs = []  # initially set to a large value
-  totalbits = 0   # record total bytes received
-  totaltime = 0
-
-  sendtotal = 0   # time to send WIN packets
+  #sendtotal = 0   # time to send WIN packets
 
   # thread that receives ack from the receiver, removes it from 
   # packetsequence, and update the recently observed RTT
   createthread(recvack(routerlistensocket, packetsequence, 
                      recentobservedRTTs, seqrange))
 
-  # thread that checks if a packet in packetsequence has timed out.
-  createthread(expiresentpackets(recentobservedRTTs, packetsequence))
-
-  lastchecktime = getruntime()   # record total time spent over a CYCLE 
-
-  while True: 
-    
-    starttime = getruntime()  # record time before sending WIN packets
-    
-    while sequenceno <= WIN:
-      # router sends a bunch of packets to the client
-      packet = str(sequenceno) + "|" + '0'*LENGTH 
-      packetsequence[sequenceno] = getruntime()  # record (seq, sendtime)
-
-      sendmessage(destip, destport, str(packet), localip, localport)
-      
-      totalbits = totalbits + len(packet)*8
-      currenttime = getruntime()
-      totaltime = currenttime - lastchecktime
-      if totaltime > CYCLE:
-        # check throughput and movement every CYCLE sec
-        lastchecktime = currenttime # reset clock
-        throughput = float(totalbits)/(totaltime)/1000000 
-        log("send rate: " + str(throughput) + " Mbps\n\n")
-        totalbits = 0  # reset bits
-
-      sequenceno = sequenceno + 1
-
-    endtime = getruntime()  # record time after sending WIN packets
-
-    logifdebug(1, "it took " + str(endtime-starttime) + " to send " + str(WIN)
-             + " pkts of " + str(LENGTH) + "bytes")
-    sendtotal = 0
-
-    if recentobservedRTTs != []:
-      sleep(estimateRTT(recentobservedRTTs))
-    
-    #checkloss(seqrange)  # when reaches WIN, check pkt loss
-
-    del seqrange[0:len(seqrange)]  # reset sequence window and number      
-    seqrange.append([1, WIN])  
-
-    #packetsequence.clear()     # reset packet sequence 
-    sequenceno = 1
+  zzz[0] = 0/1000
+  sendpackets(sequenceno, packetsequence, seqrange)
 
 
-    
+
 ############ define protocol parameters ############   
 LENGTH = 1000    # packet length (change for different tx rates)
 RTTWIN = 10      # check packet loss every RTTWIN ack
-WIN = 1000        # window size to check for packet loss
 DEBUG = 0     # output some debug messages if DEBUG == 1 
               # TODO: make this a command line arg
+N = 10      # timestamp packets every Nth
 CYCLE = 1  # time duration to calculate throughput
+pickedTime = {}
+failedTime = {}
 
+sleeptime = [0, 0.1/1000, 0.2/1000, 0.3/1000, 0.4/1000, 0.5/1000, 
+             0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1/1000]  # hard coded
+zzz = [0]    # global variable that controls sleeping time!!
+
+listlock = createlock() # to sync data structure updates in different threads
+oldestpktsendtime = []   # record the time when the oldest pkt was sent
+
+(localip, localport) = (getmyip(), 63100)
+(destip, destport) = ('206.87.194.38', 63101)  # TODO: this needs to be phone's IP
+log("my IP: " + localip + '\n')
+      
 main()
+############ end of main() ############ 
+
