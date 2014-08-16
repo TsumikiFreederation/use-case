@@ -329,8 +329,6 @@ def sendpackets(sequenceno, packetsequence, seqrange):
 
   while True: 
     
-    #starttime = getruntime()  # record time before sending WIN packets
-    
     # router sends a bunch of packets to the client
     packet = str(sequenceno) + "|" + '0'*LENGTH 
     #if sequenceno % N == 0:
@@ -349,9 +347,7 @@ def sendpackets(sequenceno, packetsequence, seqrange):
     sendmessage(destip, destport, str(packet), localip, localport)
     #logifdebug(DEBUG, "while send, " + str(seqrange) + '\t' + str(packetsequence))
     
-    #sleep(zzz[0])  # sleep for zzz ms
-    #if sequenceno % 1000 == 0:
-    #  log("zzzzzzzzzz.....for " + str(zzz[0]) + "sec.\n")
+    sleep(zzz[0])  # sleep for zzz ms
       
     totalbits = totalbits + len(packet)*8
     currenttime = getruntime()
@@ -366,96 +362,6 @@ def sendpackets(sequenceno, packetsequence, seqrange):
       totalbits = 0  # reset bits
 
     sequenceno = sequenceno + 1
-      
-    #endtime = getruntime()  # record time after sending WIN packets
-
-    #logifdebug(DEBUG, "it took " + str(endtime-starttime) + " to send " + str(WIN)
-    #         + " pkts of " + str(LENGTH) + "bytes")
-    #sendtotal = 0
-
-    #if sequenceno % WIN == 0:        
-    #  del seqrange[0:len(seqrange)]  # reset sequence window and number        
-    #  packetsequence.clear()     # reset packet sequence 
-    #  sequenceno = 1
-
-
-def generatecsv(file, timeratemap):
-  """
-  Output timeratemap to a CSV file.
-  """
-  
-  filestring = file + ".csv"
-  if filestring in listfiles():
-    removefile(filestring)
-    
-  myfileobject = openfile(filestring, True)
-  writestring = "sleep time (ms), send rate (Mbps) \n"
-
-  for sleeptime in timeratemap:       
-     writestring = writestring + str(sleeptime) + ", "
-     writestring = writestring + str(timeratemap[sleeptime]) + " \n"           
-
-  writestring = writestring + "\n"                   
-  myfileobject.writeat(writestring, 0)
-  myfileobject.close() 
-
-    
-
-def benchmarking(sequenceno):
-  """
-  For every sleep time, estimate the average throughput.
-  """
-  totalbits = 0   # record total bytes received
-  totaltime = 0
-  
-  intval = 0.0001   # constant time interval
-  numinterval = 0      # how many interval's to sleep
-  sleeptime = 0
-  throughput = 0       # initial rate is 0
-  count = 0   # num of times to measure the sending rate with the same sleep time
-  REPEAT = 10 # max of count
-  sendingrate = []
-  timeratemap = {}
-  lastchecktime = getruntime()   # record total time spent over a CYCLE 
-
-  while True:      
-    packet = str(sequenceno) + "|" + '0'*LENGTH 
-    sendmessage(destip, destport, str(packet), localip, localport)     
-    sleeptime = numinterval * intval  
-    sleep(sleeptime)
-      
-    totalbits = totalbits + len(packet)*8
-    currenttime = getruntime()
-    totaltime = currenttime - lastchecktime
-    
-    if totaltime > CYCLE:
-      # check throughput and movement every CYCLE sec
-      if count < REPEAT:      
-        count = count + 1
-        lastchecktime = currenttime # reset clock
-        throughput = float(totalbits)/(totaltime)/1000000 
-        sendingrate.append(throughput)
-        log("send rate: " + str(throughput) + " Mbps\n")
-        totalbits = 0  # reset bits
-      else: # count == REPEAT:
-        avgrate = sum(sendingrate)/len(sendingrate)
-        log("sleeptime: " + str(sleeptime*1000) + "ms\t avg send rate: " 
-            + str(avgrate) + " Mbps\n")
-        timeratemap[sleeptime*1000] = avgrate  # store sleeptime in ms
-          
-        if avgrate < 6: # 6Mbps is the lowest rate
-          break
-          
-        #log("timeratemap: " + str(timeratemap) + "\n\n")
-        del sendingrate[0:len(sendingrate)]
-        count = 0        
-        numinterval = numinterval + 1
-
-    sequenceno = sequenceno + 1  
-
-  generatecsv("benchmarking", timeratemap)
-
-  return timeratemap
   
 
 def main():
@@ -478,9 +384,6 @@ def main():
   createthread(recvack(routerlistensocket, packetsequence, 
                      recentobservedRTTs, seqrange))
 
-  # we need to adjust to this send rate
-  #timeratemap = benchmarking(sequenceno)
-
   zzz[0] = 0/1000
   sendpackets(sequenceno, packetsequence, seqrange)
 
@@ -489,7 +392,6 @@ def main():
 ############ define protocol parameters ############   
 LENGTH = 1000    # packet length (change for different tx rates)
 RTTWIN = 10      # check packet loss every RTTWIN ack
-WIN = 10        # window size to check for packet loss
 DEBUG = 0     # output some debug messages if DEBUG == 1 
               # TODO: make this a command line arg
 N = 10      # timestamp packets every Nth
