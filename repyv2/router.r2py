@@ -78,8 +78,7 @@ def delfromseqrange(seq, seqrange):
         else: # right > seq
           if left == seq:  # change to [left+1, right]
             rangeinsert(left+1, right, seqrange, index)
-          else: # left < seq < right: 
-                # change to [left, seq-1], [seq+1, right]
+          else: # left < seq < right: change to [left, seq-1], [seq+1, right]
             rangeinsert(left, seq-1, seqrange, index)
             rangeinsert(seq+1, right, seqrange, index+1)
               
@@ -156,7 +155,7 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
             recentobservedRTTs.pop(0)
             
         else:
-          log(seq + "th pkt is received before sent, or has been deleted due to timeout.\n") 
+          #log(seq + "th pkt is received before sent, or has been deleted due to timeout.\n") 
           pass               
 
       except SocketWouldBlockError:
@@ -186,14 +185,10 @@ def findlessthan(seqrange, seqlimit):
   return lostseq
 
 
-def rateadjust(now, numlost, packetsequence):
+def adjustrate(now, numlost, packetsequence):
   """
   Given lost packets, adjust sending rate. 
   """
-  log(str(id(zzz))+'\n')
-  log(str(id(ratesample))+'\n')
-
-  oldbr = zzz[0]
   br = 0
   
   if numlost != []: # loss happened, slow down 
@@ -202,19 +197,19 @@ def rateadjust(now, numlost, packetsequence):
         sendtime = packetsequence[int(num)]
         failedTime[zzz[0]] = now 
         if ratesample[0] == 1:
-          br = oldbr
+          br = oldbr[0]
         else:
           br = min(zzz[0]+0.01/1000, max(sleeptime)) # 0.01: arbitrary number?
-          ratesample = 0              
+          ratesample[0] = 0              
   else: # no loss, speed up
     ratesample[0] = 0
-    if now - pickedTime[zzz[0]] > 0.05:
+    if now - pickedTime[zzz[0]] > 0.005:
       for tau in sleeptime:
-        if now - failedTime[tau] > 0.1:
+        if now - failedTime[tau] > 0.01:
           br = tau
           break           
       ratesample[0] = 1
-      oldbr = br
+      oldbr[0] = br
     else:
       br = zzz[0]
 
@@ -229,7 +224,6 @@ def checkloss(now, RTT, packetsequence, seqrange):
   """
   Every 2*RTT check pkt loss, delete outdated packets.
   """
-  
   oldseq = []
   for (id, sendtime) in packetsequence.items():
     if sendtime < now - RTT*2:
@@ -237,9 +231,9 @@ def checkloss(now, RTT, packetsequence, seqrange):
       oldseq.append(id)
 
   if oldseq != []:
-    seqlimit = max(oldseq)  # last/largest seq in lostseq
+    seqlimit = max(oldseq)  # find the largest seq in lostseq
     numlost = findlessthan(seqrange, seqlimit)  
-    #rateadjust(now, numlost, packetsequence)
+    adjustrate(now, numlost, packetsequence)
     
     # Remove all numlost from packetsequence
     for seq in numlost:
@@ -311,7 +305,9 @@ def sendpackets(sequenceno, packetsequence, seqrange):
         listlock.release()
         del oldestpktsendtime[0:len(oldestpktsendtime)]
     
-    #sleep(zzz[0])  # sleep for zzz ms
+    sleep(zzz[0])  # sleep for zzz sec
+    if sequenceno % 1000 == 0:
+      logifdebug(DEBUG, "sleepign for " + str(zzz[0]) + "sec\n")
       
     totalbits = totalbits + len(packet)*8
     currenttime = getruntime()
@@ -355,14 +351,15 @@ DEBUG = 0     # output some debug messages if DEBUG == 1
               # TODO: make this a command line arg
 CYCLE = 1  # time duration to calculate throughput
 recentobservedRTTs = []  # record the most recent RTTWIN RTTs
-pickedTime = {}
-failedTime = {}
+pickedTime = {}   # global variable recording the time when a rate was picked
+failedTime = {}   # global variable recording the time when a rate failed
 
 sleeptime = [0, 0.1/1000, 0.2/1000, 0.3/1000, 0.4/1000, 0.5/1000, 
-             0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1/1000]  # hard coded
-zzz = [0]    # global variable that controls sleeping time!!
-ratesample = [0] 
-
+             0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1.0/1000]  # hard coded
+zzz = [0]         # global variable that controls sleeping time
+ratesample = [0]  # global variable indicating if we are sampling the rate
+oldbr = []        # global variable recording the last rate we picked
+oldbr.append(zzz[0])
 
 listlock = createlock()  # to sync data structure updates in different threads
 oldestpktsendtime = []   # record the time when the oldest pkt was sent
