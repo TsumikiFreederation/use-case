@@ -57,6 +57,7 @@ def updatestats(rate, seq, now, packetsequence):
     log(seq + "th pkt is received before sent, or has been deleted due to timeout.\n") 
     pass
 
+  
 def resetstats():
   """
   Reset link statistics every CYCLE sec (remove info older than
@@ -151,7 +152,7 @@ def sendpackets(sequenceno, packetsequence):
 
     # only when there's loss do we seclect a new rate
     if existconsequtivelosses(zzz[0], 4):
-      if ispermanent(sequenceno % WINSIZE):
+      if ispermanent(sequenceno):
         # select the highest rate with no 4 successive failures
         # in the past 10 sec, assign to current rate
         zzz[0] = selectpermrate(4, 10)  
