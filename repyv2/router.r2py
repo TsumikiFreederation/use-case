@@ -156,6 +156,7 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
             
         else:
           #log(seq + "th pkt is received before sent, or has been deleted due to timeout.\n") 
+          # TODO: check why this error happens
           pass               
 
       except SocketWouldBlockError:
@@ -192,15 +193,14 @@ def adjustrate(now, numlost, packetsequence):
   br = 0
   
   if numlost != []: # loss happened, slow down 
-    for num in numlost:
-      if int(num) in packetsequence:
-        sendtime = packetsequence[int(num)]
-        failedTime[zzz[0]] = now 
-        if ratesample[0] == 1:
-          br = oldbr[0]
-        else:
-          br = min(zzz[0]+0.01/1000, max(sleeptime)) # 0.01: arbitrary number?
-          ratesample[0] = 0              
+    # TODO: numlost can have multiple seq
+    # do we deal with them individually?
+    failedTime[zzz[0]] = now 
+    if ratesample[0] == 1:
+      br = oldbr[0]
+    else:
+      br = min(zzz[0]+0.1/1000, max(sleeptime)) # 0.1: step size of sleeptime
+      ratesample[0] = 0              
   else: # no loss, speed up
     ratesample[0] = 0
     if now - pickedTime[zzz[0]] > 0.005:
@@ -213,8 +213,8 @@ def adjustrate(now, numlost, packetsequence):
     else:
       br = zzz[0]
 
-    if br != zzz[0]:
-      pickedTime[br] = now
+  if br != zzz[0]:
+    pickedTime[br] = now
       
   zzz[0] = br
 
@@ -316,7 +316,7 @@ def sendpackets(sequenceno, packetsequence, seqrange):
       # check throughput and movement every CYCLE sec
       lastchecktime = currenttime # reset clock
       throughput = float(totalbits)/(totaltime)/1000000 
-      log("send rate: " + str(throughput) + " Mbps\n")
+      log("sleep time " + str(zzz[0]) + "sec, send rate " + str(throughput) + " Mbps\n")
       totalbits = 0  # reset bits
 
     sequenceno = sequenceno + 1
