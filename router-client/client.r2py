@@ -55,6 +55,7 @@ DEBUG = 0  # output some debug messages if DEBUG == 1
 CYCLE = 1  # time duration to calculate throughput
 
 (localip, localport) = (getmyip(), 63101)
+# IB: Make the IP a command line arg.
 (destip, destport) = ('128.189.201.34', 63100) # TODO: this needs to be router's IP
 
 log(getmyip() + '\n')

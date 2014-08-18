@@ -1,3 +1,7 @@
+# IB: having router.r2py in repyv2 and router-client is confusing and
+# will surely lead to errors. Maintain only one copy in the repository
+# and use a script to deploy and run the router for experiments.
+
 """
 <Program Name>
   router.r2py
