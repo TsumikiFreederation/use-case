@@ -1,3 +1,7 @@
+#
+# IB: Refactor the repyv2/; particularly move this file out of the repyv2/ directory.
+#
+
 """
 <Program Name>
   staticrouter.r2py
@@ -14,7 +18,10 @@
 
 #from repyportability import *
 
-
+#
+# IB: This is a copy of identical functino in router.r2py. Have one
+# copy of this function in the codebase.
+#
 def deserialize(message):      
   """
   Returns the sequence of the packet, and movement hint.
@@ -27,6 +34,10 @@ def deserialize(message):
   return (seq, move)
 
 
+#
+# IB: This is a copy of identical functino in router.r2py. Have one
+# copy of this function in the codebase.
+#
 def logifdebug(DEBUG, string):
   """
   Prints out string if DEBUG == 1.
@@ -39,10 +50,9 @@ def logifdebug(DEBUG, string):
 
 def updatestats(rate, seq, now, packetsequence):
   """
-  Update link statistics everytime receives a packet.
+  Update link statistics everytime we receive a packet.
   """ 
   if int(seq) in packetsequence:
-      
     sendtime = packetsequence[int(seq)]
     newrtt = now - sendtime  # transmission time
     stats[rate].append((seq, sendtime, newrtt))
@@ -101,6 +111,7 @@ def ispermanent(seq):
   """
   Return if a packet seq # is permanent or not.
   """
+  # IB: need better comment: "permanent" is an undefined keyword.
   if seq % WINSIZE in PERMWIN:
     return 1
   elif seq % WINSIZE in TEMPWIN:
@@ -128,6 +139,14 @@ def recvack(routerlistensocket, packetsequence):
         (seq, move) = deserialize(message)  # TODO: use movement info 
 
         # z[0] is the global var indicating current rate
+
+        # IB: z[0] (zzz[0]?) -- poor name. This is implicitly
+        # indicating a rate, it's actually sleeping time. So, I would
+        # in comments explain this in terms of sleep time. Also,
+        # depending on granularity of update to sleeping time you may
+        # have many many different sleep times. You probably need to
+        # aggregate information for adjacent sleep times, but you may
+        # need to check if this is necessary experimentally.
         updatestats(zzz[0], seq, now, packetsequence) 
                        
       except SocketWouldBlockError:
@@ -150,7 +169,7 @@ def sendpackets(sequenceno, packetsequence):
     timestamp = getruntime()  # record (seq, sendtime)
     packetsequence[sequenceno] = timestamp      
 
-    # only when there's loss do we seclect a new rate
+    # When there is loss we select a new rate:
     if existconsequtivelosses(zzz[0], 4):
       if ispermanent(sequenceno):
         # select the highest rate with no 4 successive failures
@@ -201,13 +220,18 @@ def main():
 ############ define protocol parameters ############   
 LENGTH = 1000    # packet length (change for different tx rates)
 DEBUG = 0     # output some debug messages if DEBUG == 1 
+
+# IB: in seconds, ms, packets?
 CYCLE = 10    # time duration to delete old data entries
+
 WINSIZE = 1000
 PERMWIN = range(0, 900)  # when seq%WINSIZE falls in this rage, the packet is permanent
 TEMPWIN = range(900, WINSIZE)
 
 sleeptime = [0, 0.1/1000, 0.2/1000, 0.3/1000, 0.4/1000, 0.5/1000, 
              0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1/1000]  # hard coded
+
+# IB: rename zzz -- is it a list?
 zzz = [0]    # global variable that controls sleeping time!!
 stats = {}
 

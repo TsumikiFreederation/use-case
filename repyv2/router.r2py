@@ -1,3 +1,7 @@
+#
+# IB: Refactor the repyv2/; particularly move this file out of the repyv2/ directory.
+#
+
 """
 <Program Name>
   router.r2py
@@ -44,12 +48,20 @@ def logifdebug(DEBUG, string):
   else: 
     return 
 
-
+#
+# IB: 1. Move all methods related to the seqrange data-structure into
+# a different file.
+#     2. Convert this data structure into a class so
+# that there is a proper data abstraction, functions become methods.
+#
 def rangeinsert(first, second, seqrange, index):
   """
   Depending on the values of first, second, 
   insert the correct range in seqrange at index.
   """
+  # IB: what do arguments first, second, and index represent?
+  # is [first,second] a new range you are inserting? Is index where you are inserting them?
+
   if index == len(seqrange):
     seqrange.append([])
     
@@ -59,6 +71,8 @@ def rangeinsert(first, second, seqrange, index):
     seqrange[index] = [first, second]
               
 
+# IB: I would like to see tests for these seqrange methods. They might
+# be correct, but I can't tell and it's easier to check with unit-tests.
 def delfromseqrange(seq, seqrange):
   """
   Delete seq from the sequence range. Add new range if necessary.
@@ -70,20 +84,27 @@ def delfromseqrange(seq, seqrange):
     if len(subrange) == 1:
       if seq == subrange[0]:
         seqrange.remove(subrange)  
+        # IB: Don't you want a "break" statement here?
     else:
       left, right = subrange 
+      # IB: You don't need this next if statement -- instead, change the next else to be
+      # "else if right > seq". This will improve code readibility.
       if right >= seq:
         if right == seq:  # change to [left, right-1] 
           rangeinsert(left, right-1, seqrange, index)         
+          # IB: Don't you also need to remove the subrange from seqrange?
+          # Or, will rangeinsert do that?
         else: # right > seq
           if left == seq:  # change to [left+1, right]
             rangeinsert(left+1, right, seqrange, index)
           else: # left < seq < right: change to [left, seq-1], [seq+1, right]
+            # IB: Why is left < seq at this point?
             rangeinsert(left, seq-1, seqrange, index)
             rangeinsert(seq+1, right, seqrange, index+1)
-              
         break
-            
+        
+      # IB: Do not need the next two lines -- they seem to be no-ops to me.
+      #
       else: # none of the above cases
         continue
 
@@ -105,6 +126,8 @@ def addtoseqrange(seq, seqrange):
       else: # len(subrange) == 2
         left, right = subrange 
 
+      # IB: throw an exception if this should not occur. Do not ignore errors.
+      #
       if right > seq:  # this case shouldn't exist: send 12 before 11
         continue        
 
@@ -146,6 +169,9 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
           try:  # delete seq upon ack
             del packetsequence[int(seq)]           
           except KeyError:
+            # IB: need comment to explain how this can happen --
+            # because of a race condition in modifying packetsequence?
+            # What other thread is modifying it?
             log(seq + "th not in the sequence (already timeout?).\n")
             pass
 
@@ -157,6 +183,8 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
         else:
           #log(seq + "th pkt is received before sent, or has been deleted due to timeout.\n") 
           # TODO: check why this error happens
+          #
+          # IB: Throw an exception if this is a legitimate error that should not occur.
           pass               
 
       except SocketWouldBlockError:
@@ -166,10 +194,13 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, seqrange):
 
 
 
+# IB: Keep seqrange methods together.
+# 
 def findlessthan(seqrange, seqlimit):
   """
   Find in seqrange all the seq numbers that are less than seqlimit.
   """
+  # IB: rename lostseq to something more meaningful.
   lostseq = []
 
   for subrange in seqrange:
@@ -183,6 +214,9 @@ def findlessthan(seqrange, seqlimit):
         if num <= seqlimit:
           lostseq.append(num)
 
+  # IB: since seqrange is sorted, it makes sense to return lostseq
+  # above when you found an item in seqrange that is > seqlimit.
+
   return lostseq
 
 
@@ -190,6 +224,11 @@ def adjustrate(now, numlost, packetsequence):
   """
   Given lost packets, adjust sending rate. 
   """
+  # IB: explain in more detail how you adjust the rate. The code below
+  # is not substitute for a high-level description. I can't understand
+  # what's happening below.
+
+  # IB: rename br to something more meaningful.
   br = 0
   
   if numlost != []: # loss happened, slow down 
@@ -224,9 +263,13 @@ def checkloss(now, RTT, packetsequence, seqrange):
   """
   Every 2*RTT check pkt loss, delete outdated packets.
   """
+
+  # IB: "seqrange" arg needs a different name -- seqrange is a
+  # data-structure, but what does it represent?
+
   oldseq = []
   for (id, sendtime) in packetsequence.items():
-    if sendtime < now - RTT*2:
+    if sendtime < (now - RTT*2):
       # if a packet was sent more than 2*RTT ago, it's considered lost
       oldseq.append(id)
 
@@ -246,6 +289,8 @@ def checkloss(now, RTT, packetsequence, seqrange):
           pass
 
     # Remove all seq's smaller than seqlimit from seqrange
+    # IB: Expand comment to explain _why_ you do this.
+
     for subrange in seqrange:      
       index = seqrange.index(subrange)
       if len(subrange) == 1:
@@ -277,7 +322,10 @@ def sendpackets(sequenceno, packetsequence, seqrange):
   """
   Sends packets to the receiver.
   """
+  # IB: bits or bytes? varname + comment inconsistency.
   totalbits = 0   # record total bytes received
+
+  # IB: Add comment -- what is totaltime, what is it used for?
   totaltime = 0
   throughput = 0       # initial rate is 0
   lastchecktime = getruntime()   # record total time spent over a CYCLE 
@@ -297,9 +345,10 @@ def sendpackets(sequenceno, packetsequence, seqrange):
       oldestpktsendtime.append([])
       oldestpktsendtime[0] = timestamp
 
+    # IB: Add comment -- what does the code below do?
     if recentobservedRTTs != []:
       RTT = estimateRTT(recentobservedRTTs)
-      if oldestpktsendtime != [] and timestamp - oldestpktsendtime[0] > 2*RTT:
+      if oldestpktsendtime != [] and (timestamp - oldestpktsendtime[0]) > 2*RTT:
         listlock.acquire(True)
         checkloss(timestamp, RTT, packetsequence, seqrange)
         listlock.release()
@@ -307,7 +356,7 @@ def sendpackets(sequenceno, packetsequence, seqrange):
     
     sleep(zzz[0])  # sleep for zzz sec
     if sequenceno % 1000 == 0:
-      logifdebug(DEBUG, "sleepign for " + str(zzz[0]) + "sec\n")
+      logifdebug(DEBUG, "sleeping for " + str(zzz[0]) + "sec\n")
       
     totalbits = totalbits + len(packet)*8
     currenttime = getruntime()
@@ -346,9 +395,13 @@ def main():
 
 ############ define protocol parameters ############   
 LENGTH = 1000    # packet length (change for different tx rates)
+
+# IB: is this expressing # of packets, or # of bytes, or seconds, or what?
 RTTWIN = 100     # keep the most recent RTTWIN RTTs
 DEBUG = 0     # output some debug messages if DEBUG == 1 
               # TODO: make this a command line arg
+
+# IB: in ms, in seconds, or packets?
 CYCLE = 1  # time duration to calculate throughput
 recentobservedRTTs = []  # record the most recent RTTWIN RTTs
 pickedTime = {}   # global variable recording the time when a rate was picked
@@ -356,8 +409,16 @@ failedTime = {}   # global variable recording the time when a rate failed
 
 sleeptime = [0, 0.1/1000, 0.2/1000, 0.3/1000, 0.4/1000, 0.5/1000, 
              0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1.0/1000]  # hard coded
+
+# IB: rename zzz to something more meaningful. Also, this is an array,
+# so you are maintaining multiple values?
 zzz = [0]         # global variable that controls sleeping time
+
+# IB: As above, this is an array -- why do you need it to be an array?
+# Comment should explain that this is maintaining mutiple sampling rates?
 ratesample = [0]  # global variable indicating if we are sampling the rate
+
+# IB: rename oldbr to something more meaningful -- what is br?
 oldbr = []        # global variable recording the last rate we picked
 oldbr.append(zzz[0])
 
