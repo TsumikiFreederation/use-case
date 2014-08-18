@@ -12,23 +12,29 @@
   All methods related to the outstanding packets data structure. 
 """
 
+class PacketSendException(Exception):
+  """
+  Handle when packet x is sent before y and x>y.
+  """
 
+  
+class RangeException(Exception):
+  """
+  Handle cases related to sequence range.
+  """
+
+  
 def rangeinsert(first, second, outstandingseq, index):
   """ 
   Insert range [first, second] in outstandingseq at index.
   """
   
-  if index == len(outstandingseq):
-    outstandingseq.append([])
-    
   if first == second:
-    outstandingseq[index] = [first]
+    outstandingseq.insert(index, [first])
   else:
-    outstandingseq[index] = [first, second]
+    outstandingseq.insert(index, [first, second])
               
 
-# IB: I would like to see tests for these outstandingseq methods. They might
-# be correct, but I can't tell and it's easier to check with unit-tests.
 def delfromoutstandingseq(seq, outstandingseq):
   """
   Delete seq from the sequence range. Add new range if necessary.
@@ -40,29 +46,27 @@ def delfromoutstandingseq(seq, outstandingseq):
     if len(subrange) == 1:
       if seq == subrange[0]:
         outstandingseq.remove(subrange)  
-        # IB: Don't you want a "break" statement here?
+        return
     else:
       left, right = subrange 
-      # IB: You don't need this next if statement -- instead, change the next else to be
-      # "else if right > seq". This will improve code readibility.
-      if right >= seq:
+      if left <= seq:
         if right == seq:  # change to [left, right-1] 
-          rangeinsert(left, right-1, outstandingseq, index)         
-          # IB: Don't you also need to remove the subrange from outstandingseq?
-          # Or, will rangeinsert do that?
-        else: # right > seq
+          outstandingseq.remove(subrange)  
+          rangeinsert(left, right-1, outstandingseq, index) 
+          return        
+        elif right > seq:
           if left == seq:  # change to [left+1, right]
+            outstandingseq.remove(subrange)  
             rangeinsert(left+1, right, outstandingseq, index)
+            return
           else: # left < seq < right: change to [left, seq-1], [seq+1, right]
-            # IB: Why is left < seq at this point?
             rangeinsert(left, seq-1, outstandingseq, index)
+            del outstandingseq[index+1]
             rangeinsert(seq+1, right, outstandingseq, index+1)
-        break
-        
-      # IB: Do not need the next two lines -- they seem to be no-ops to me.
-      #
-      else: # none of the above cases
-        continue
+            return
+          
+  raise RangeException("Packet seq not found", 
+            [str(seq) + " is not in " + str(outstandingseq)])    
 
 
 def addtooutstandingseq(seq, outstandingseq):
@@ -82,10 +86,10 @@ def addtooutstandingseq(seq, outstandingseq):
       else: # len(subrange) == 2
         left, right = subrange 
 
-      # IB: throw an exception if this should not occur. Do not ignore errors.
-      #
       if right > seq:  # this case shouldn't exist: send 12 before 11
-        continue        
+        log("packet " + str(right) + " sent before " + str(seq) + ".\n")
+        raise PacketSendException("Packet send out of order", 
+                                  [str(right) + " sent before " + str(seq)])        
 
       if right < seq - 1:  # [[1,3], [5,7], [10]]: now send seq 12
         outstandingseq.append([seq])   # [[1,3], [5,7], [10], [12]]

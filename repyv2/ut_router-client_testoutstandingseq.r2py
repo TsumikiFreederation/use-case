@@ -1,0 +1,70 @@
+"""
+<Program Name>
+  outstandingseq.r2py
+
+<Started>
+  Aug 18, 2014
+
+<Author>
+  Yanyan Zhuang
+
+<Purpose>
+  Testing outstanding packets data structure and methods in outstandingseq.r2py. 
+  To run this: 
+  python repy.py resources.router-client.test dylink.r2py ut_router-client_testoutstandingseq.r2py
+"""
+
+
+dy_import_module_symbols("outstandingseq.r2py")
+dy_import_module_symbols('random.r2py')  # to generate random packet seq
+
+
+def test_addtooutstandingseq():
+  for seq in range(1, MAXSEQ+1):
+    addtooutstandingseq(seq, outstandingseq)
+    if seq % 10 == 0:    
+      log("test_addtooutstandingseq: " + str(outstandingseq) + '\n')
+
+      
+def test_addtooutstandingseq_fail():
+  seqrange = [3, 2, 1]
+  for seq in seqrange:
+    addtooutstandingseq(seq, outstandingseq)
+
+    
+def test_delfromoutstandingseq():
+  for i in range(1, TESTRUN+1):
+    seq = random_randint(1, MAXSEQ)
+    delfromoutstandingseq(seq, outstandingseq)
+    log("test_delfromoutstandingseq: after deleting " + 
+        str(seq) + " " + str(outstandingseq) + '\n')
+
+    
+def test_delfromoutstandingseq_fail():
+  delfromoutstandingseq(MAXSEQ+1, outstandingseq)
+  
+
+def test_findlessthan():
+  for i in range(1, TESTRUN+1):
+    seqlimit = random_randint(1, MAXSEQ)
+    lessthanseqlimit = findlessthan(outstandingseq, seqlimit)
+    log("test_findlessthan: finding less than " + 
+        str(seqlimit) + " " + str(lessthanseqlimit) + '\n')
+    
+FAIL = 0  # variable indicating whether we test failed cases
+MAXSEQ = 100 # max packet seq numberd for testing
+TESTRUN = 5 # number of repetitive runs for a test
+
+outstandingseq = []
+test_addtooutstandingseq()
+
+if FAIL == 1:
+  del outstandingseq[0:len(outstandingseq)]
+  test_addtooutstandingseq_fail()
+
+test_delfromoutstandingseq()
+
+if FAIL == 1:
+  test_delfromoutstandingseq_fail()
+
+test_findlessthan()
