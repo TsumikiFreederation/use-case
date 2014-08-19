@@ -66,7 +66,7 @@ def delfromoutstandingseq(seq, outstandingseq):
             return
           
   raise RangeException("Packet seq not found", 
-            [str(seq) + " is not in " + str(outstandingseq)])    
+            [str(seq) + " is not in outstandingseq: " + str(outstandingseq)])    
 
 
 def addtooutstandingseq(seq, outstandingseq):
@@ -128,8 +128,7 @@ def removelessthan(outstandingseq, seqlimit):
   seq's smaller than seqlimit in outstandingseq) are 
   considered lost: remove them all.
   """
-  log("seqlimit: " + str(seqlimit) + '\n')
-  log("outstandingseq: " + str(outstandingseq) + '\n')
+  
   for subrange in outstandingseq:      
     index = outstandingseq.index(subrange)
     if len(subrange) == 1:

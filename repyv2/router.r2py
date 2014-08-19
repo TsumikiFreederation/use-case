@@ -64,7 +64,6 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, outstandings
       try:
         # receive ack and movement hint from client
         remoteip, remoteport, message = routerlistensocket.getmessage()
-        log("received " + str(message) + ', ' + str(outstandingseq) + '\n')
         # if there is SocketWouldBlockError, the rest will be skipped
         
         now = getruntime()
@@ -80,11 +79,8 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, outstandings
           try:  # delete seq upon ack
             del packetsequence[int(seq)]           
           except KeyError:
-            # IB: need comment to explain how this can happen --
-            # because of a race condition in modifying packetsequence?
-            # What other thread is modifying it?
-            log(seq + "th not in the sequence (already timeout?).\n")
-            pass
+            raise RangeException("Packet seq not found", 
+              [str(seq) + " is not in packetsequence: " + str(packetsequence)]) 
 
           newrtt = now - sendtime  # update RTT
           recentobservedRTTs.append(newrtt)
@@ -92,11 +88,8 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, outstandings
             recentobservedRTTs.pop(0)
             
         else:
-          #log(seq + "th pkt is received before sent, or has been deleted due to timeout.\n") 
-          # TODO: check why this error happens
-          #
-          # IB: Throw an exception if this is a legitimate error that should not occur.
-          pass               
+          raise RangeException("Packet seq not found", 
+              [str(seq) + " is not in packetsequence: " + str(packetsequence)])               
 
       except SocketWouldBlockError:
         pass
@@ -108,36 +101,39 @@ def adjustrate(now, numlost, packetsequence):
   """
   Given lost packets, adjust sending rate. 
   """
-  # IB: explain in more detail how you adjust the rate. The code below
-  # is not substitute for a high-level description. I can't understand
-  # what's happening below.
-
-  bitrate = 0
   
   if numlost != []: # loss happened, slow down 
-    # TODO: numlost can have multiple seq
-    # do we deal with them individually?
-    failedTime[currentbitrate[0]] = now 
-    if ratesample[0] == 1:
-      bitrate = lastbitrate[0]
-    else:
+    
+    failedTime[currentbitrate[0]] = now
+     
+    if ratesample[0] == 1:      # if we are sampling a higher rate
+      bitrate = lastbitrate[0]  # set bitrate to this higher rate
+    else:   # set bitrate to a lower rate
       bitrate = min(currentbitrate[0]+0.1/1000, 
                     max(sleeptime))  # 0.1/1000: step size of sleeptime
-      ratesample[0] = 0              
+      ratesample[0] = 0    # mark stop sampling
+                
   else: # no loss, speed up
-    ratesample[0] = 0
+      
+    ratesample[0] = 0  # by default, we don't sample higher rates
+
+    # (1) if the current rate has been successful in the past 0.005sec
     if now - pickedTime[currentbitrate[0]] > 0.005:
       for tau in sleeptime:
+        # (2) find the highest rate that has not failed in the past 0.01sec 
         if now - failedTime[tau] > 0.01:
           bitrate = tau
+          # sleeptime is an ordered list: first bitrate is highest   
           break           
-      ratesample[0] = 1
-      lastbitrate[0] = br
-    else:
+        
+      ratesample[0] = 1   # mark it that we start to sample this higher rate
+      lastbitrate[0] = bitrate  # record this higher bitrate
+      
+    else: # the current bit rate has failed in the past 0.005sec
       bitrate = currentbitrate[0]
 
   if bitrate != currentbitrate[0]:
-    pickedTime[bitrate] = now
+    pickedTime[bitrate] = now  # update time when bitrate was picked
       
   currentbitrate[0] = bitrate
 
@@ -150,14 +146,16 @@ def checkloss(now, RTT, packetsequence, outstandingseq):
 
   oldseq = []
   for (id, sendtime) in packetsequence.items():
-    if sendtime < (now - RTT*2):
+    if sendtime < (now - 8*RTT):
       # if a packet was sent more than 2*RTT ago, it's considered lost
       oldseq.append(id)
 
+  adjustrate(now, oldseq, packetsequence)
+  
   if oldseq != []:
     seqlimit = max(oldseq)  # find the largest seq in lostseq
     numlost = findlessthan(outstandingseq, seqlimit)  
-    adjustrate(now, numlost, packetsequence)
+    #adjustrate(now, oldseq, packetsequence)
     
     # Remove all numlost from packetsequence
     for seq in numlost:
@@ -169,13 +167,13 @@ def checkloss(now, RTT, packetsequence, outstandingseq):
           log(seq + "th not in the sequence (recvack got this seq's ack?).\n")
           pass
 
-    # packets older than 2RTT (seq's smaller than seqlimit in outstandingseq) are 
-    # considered lost: remove them all 
+    # packets older than 2RTT (seq's smaller than seqlimit in 
+    # outstandingseq) are considered lost: remove them all 
     removelessthan(outstandingseq, seqlimit)
     
   else:
-      logifdebug(DEBUG, "num lost (packets older than 2RTT): None\n\n")
-
+    logifdebug(DEBUG, "num lost (packets older than 2RTT): None\n\n")
+    
       
 
 def sendpackets(sequenceno, packetsequence, outstandingseq):
@@ -206,7 +204,8 @@ def sendpackets(sequenceno, packetsequence, outstandingseq):
     # based on recently observed RTTs, find/check/remove packets older than 2RTT
     if recentobservedRTTs != []:
       RTT = estimateRTT(recentobservedRTTs)
-      if oldestpktsendtime != [] and (timestamp - oldestpktsendtime[0]) > 2*RTT:
+      pickedTime[currentbitrate[0]] = timestamp
+      if oldestpktsendtime != [] and (timestamp - oldestpktsendtime[0]) > 8*RTT:
         listlock.acquire(True)
         checkloss(timestamp, RTT, packetsequence, outstandingseq)
         listlock.release()
@@ -223,7 +222,8 @@ def sendpackets(sequenceno, packetsequence, outstandingseq):
       # check throughput and movement every CYCLE sec
       lastchecktime = currenttime # reset clock
       throughput = float(totalbits)/(totaltime)/1000000 
-      log("sleep time " + str(currentbitrate[0]) + "sec, send rate " + str(throughput) + " Mbps\n")
+      log("sleep time " + str(currentbitrate[0]) + "sec, send rate " 
+          + str(throughput) + " Mbps\n")
       totalbits = 0  # reset bits
 
     sequenceno = sequenceno + 1
@@ -253,7 +253,7 @@ def main():
 
 ############ define protocol parameters ############   
 LENGTH = 1000    # packet length (change for different tx rates)
-RTTWIN = 100     # keep the most recent for RTTWIN packets
+RTTWIN = 30     # keep the most recent for RTTWIN packets
 DEBUG = 0     # output some debug messages if DEBUG == 1 
               # TODO: make this a command line arg
 
