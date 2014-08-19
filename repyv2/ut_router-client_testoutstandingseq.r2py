@@ -50,10 +50,18 @@ def test_findlessthan():
     lessthanseqlimit = findlessthan(outstandingseq, seqlimit)
     log("test_findlessthan: finding less than " + 
         str(seqlimit) + " " + str(lessthanseqlimit) + '\n')
+
+    
+def test_removelessthan():
+  seqlimit = random_randint(1, MAXSEQ)
+  removelessthan(outstandingseq, seqlimit)
+  log("test_removelessthan: finding less than " + 
+        str(seqlimit) + " " + str(outstandingseq) + '\n')
+
     
 FAIL = 0  # variable indicating whether we test failed cases
 MAXSEQ = 100 # max packet seq numberd for testing
-TESTRUN = 5 # number of repetitive runs for a test
+TESTRUN = 2 # number of repetitive runs for a test
 
 outstandingseq = []
 test_addtooutstandingseq()
@@ -68,3 +76,5 @@ if FAIL == 1:
   test_delfromoutstandingseq_fail()
 
 test_findlessthan()
+
+test_removelessthan()

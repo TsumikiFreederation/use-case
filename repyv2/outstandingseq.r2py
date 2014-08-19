@@ -121,3 +121,37 @@ def findlessthan(outstandingseq, seqlimit):
           lessthanseqlimit.append(num)
         else:
           return lessthanseqlimit
+
+
+def removelessthan(outstandingseq, seqlimit):
+  """
+  seq's smaller than seqlimit in outstandingseq) are 
+  considered lost: remove them all.
+  """
+  log("seqlimit: " + str(seqlimit) + '\n')
+  log("outstandingseq: " + str(outstandingseq) + '\n')
+  for subrange in outstandingseq:      
+    index = outstandingseq.index(subrange)
+    if len(subrange) == 1:
+      right = subrange[0]
+      if right <= seqlimit:
+        outstandingseq[index] = []  
+    else:  # len(subrange) == 2
+      left, right = subrange 
+      if right <= seqlimit:
+        outstandingseq[index] = []  
+      else:  # right > seqlimit
+        if left <= seqlimit:  # left <= seqlimit < right
+          if seqlimit+1 == right:
+            outstandingseq[index] = [right]
+          else:
+            outstandingseq[index] = [seqlimit+1, right]
+          break
+
+  emptyindex = []
+  for subrange in outstandingseq: 
+    if subrange == []:
+      emptyindex.append(outstandingseq.index(subrange))
+
+  for index in emptyindex:
+    del outstandingseq[index]

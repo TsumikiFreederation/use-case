@@ -35,8 +35,8 @@ def estimateRTT(recentobservedRTTs):
   """
   Returns the max value of recent RTTs
   """
-  #return max(recentobservedRTTs)
-  return sum(recentobservedRTTs)/len(recentobservedRTTs)
+  return max(recentobservedRTTs)
+  #return sum(recentobservedRTTs)/len(recentobservedRTTs)
 
 
 def logifdebug(DEBUG, string):
@@ -64,6 +64,7 @@ def recvack(routerlistensocket, packetsequence, recentobservedRTTs, outstandings
       try:
         # receive ack and movement hint from client
         remoteip, remoteport, message = routerlistensocket.getmessage()
+        log("received " + str(message) + ', ' + str(outstandingseq) + '\n')
         # if there is SocketWouldBlockError, the rest will be skipped
         
         now = getruntime()
@@ -170,27 +171,7 @@ def checkloss(now, RTT, packetsequence, outstandingseq):
 
     # packets older than 2RTT (seq's smaller than seqlimit in outstandingseq) are 
     # considered lost: remove them all 
-    for subrange in outstandingseq:      
-      index = outstandingseq.index(subrange)
-      if len(subrange) == 1:
-        right = subrange[0]
-        if right <= seqlimit:
-          outstandingseq[index] = []  #outstandingseq.remove(subrange)  
-      else:  # len(subrange) == 2
-        left, right = subrange 
-        if right <= seqlimit:
-          outstandingseq[index] = []  #outstandingseq.remove(subrange)
-        else:  # right > seqlimit
-          if left <= seqlimit:  # left <= seqlimit < right
-            rangeinsert(seqlimit+1, right, outstandingseq, index)
-
-    emptyindex = []
-    for subrange in outstandingseq: 
-      if subrange == []:
-        emptyindex.append(outstandingseq.index(subrange))
-
-    for index in emptyindex:
-      del outstandingseq[index]
+    removelessthan(outstandingseq, seqlimit)
     
   else:
       logifdebug(DEBUG, "num lost (packets older than 2RTT): None\n\n")
