@@ -16,36 +16,7 @@
   Router as the data sender, for the use case of rate adaptation.
 """
 
-#from repyportability import *
-
-#
-# IB: This is a copy of identical functino in router.r2py. Have one
-# copy of this function in the codebase.
-#
-def deserialize(message):      
-  """
-  Returns the sequence of the packet, and movement hint.
-  """
-  if "|" in message:
-    seq, move = message.split("|")
-  else:
-    seq = message
-    move = None
-  return (seq, move)
-
-
-#
-# IB: This is a copy of identical functino in router.r2py. Have one
-# copy of this function in the codebase.
-#
-def logifdebug(DEBUG, string):
-  """
-  Prints out string if DEBUG == 1.
-  """
-  if DEBUG == 1:
-    log(string + '\n')
-  else: 
-    return 
+dy_import_module_symbols("routercommon.r2py") 
                   
 
 def updatestats(rate, seq, now, packetsequence):

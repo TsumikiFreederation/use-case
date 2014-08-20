@@ -1,0 +1,34 @@
+"""
+<Program Name>
+  routercommon.r2py
+
+<Started>
+  Aug 20, 2014
+
+<Author>
+  Yanyan Zhuang
+
+<Purpose>
+  Common methods called my router code. 
+"""
+
+def deserialize(message):      
+  """
+  Returns the sequence of the packet, and movement hint.
+  """
+  if "|" in message:
+    seq, move = message.split("|")
+  else:
+    seq = message
+    move = None
+  return (seq, move)
+
+
+def logifdebug(DEBUG, string):
+  """
+  Prints out string if DEBUG == 1.
+  """
+  if DEBUG == 1:
+    log(string + '\n')
+  else: 
+    return 
