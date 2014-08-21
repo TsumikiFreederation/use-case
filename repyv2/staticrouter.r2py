@@ -67,21 +67,7 @@ def resetstats(now, packetsequence, outstandingseq):
     # packets older than 2RTT (seq's smaller than seqlimit in 
     # outstandingseq) are considered lost: remove them all 
     removelessthan(outstandingseq, seqlimit)
-
-def myfunc(l):
-    r = []
-    p = q = None
-    for x in l + [-1]:
-        if x - 1 == q:
-            q += 1
-        else:
-            if p:
-               if q > p:
-                   r.append('%s-%s' % (p, q))
-               else:
-                   r.append(str(p))
-            p = q = x
-    return '(%s)' % ', '.join(r)
+    
 
 
 def existconsequtivelosses(lostseq, rate, n):
@@ -100,7 +86,7 @@ def existconsequtivelosses(lostseq, rate, n):
     else:
       if left:
         if right - left >= n-1:
-          log('[' + str(left) + '-' + str(right) + ']\n')
+          #log('[' + str(left) + '-' + str(right) + ']\n')
           return True
       left = right = x
       
@@ -145,25 +131,61 @@ def ispermanent(seq):
     
 
 
-def samplerate(now, lostseq, rate):
+def samplerate(sequenceno, now, lostseq, rate):
   """
   Given lost packets, adjust sending rate. 
   """
-  selected = None
+
+  if ispermanent(sequenceno):
+    selected = None
   
-  if existconsequtivelosses(lostseq, rate, 4) == True:
+    if existconsequtivelosses(lostseq, rate, 4) == True:
+      candidate = []
+      for t in sleeptime:
+        if t!= rate and existconsequtivelosses(lostseq, t, 4) == False:
+          candidate.append(t)
+      # select the highest rate that has no 4 succcessive fails
+      selected = min(candidate)
+
+    if selected != None:
+      # select the highest rate that has no 4 succcessive fails
+      currentbitrate[0] = selected
+      log("1.1 succcessive 4 fails happened at rate " + str(rate) + 
+          ". new sleep time (highest rate with no 4 fails): " + str(currentbitrate[0]) + '\n\n')
+    else: 
+      # select the rate with lowest avg tx time
+      txtime = {}
+      for t in sleeptime:
+        if recentobservedRTTs[t] != []:
+          avgtxtime = sum(recentobservedRTTs[t])/len(recentobservedRTTs[t])
+          log("rate: " + str(t) + " " + str(avgtxtime) + '\n')
+          txtime[t] = avgtxtime
+
+      minrate = min(txtime, key=txtime.get)   # the index for rate that has the lowest tx time
+      log("lowest rate: " + str(minrate) + " " + str(txtime[minrate]) + '\n')
+      currentbitrate[0] = minrate
+      log("1.2 no fails happened at rate " + str(rate) + 
+          ". new sleep time (rate with lowest tx time): " + str(currentbitrate[0]) + '\n\n')
+      
+  else: # temp packets
+    # select a rate that (1) has no 4 succcessive fails and 
+    # (2) min(txtime) < avg(current txtime)
     candidate = []
     for t in sleeptime:
       if t!= rate and existconsequtivelosses(lostseq, t, 4) == False:
         candidate.append(t)
-    selected = min(candidate)
 
-  if selected != None:
-    currentbitrate[0] = selected
-    log("current sleep time: " + str(currentbitrate[0]) + '\n\n')
+    current_txtime = sum(recentobservedRTTs[rate])/len(recentobservedRTTs[rate])
+
+    for c in candidate:
+      if recentobservedRTTs[t] != [] and min(recentobservedRTTs[c]) < current_txtime:
+        currentbitrate[0] = minrate
+        break
+      
+    log("2 temp packets. new sleep time: " + str(currentbitrate[0]) + '\n\n')
   
 
-def checkloss(now, RTT, packetsequence, outstandingseq, lostseq):
+def checkloss(sequenceno, now, RTT, packetsequence, outstandingseq, lostseq):
   """
   Every 2*RTT check pkt loss, delete outdated packets.
   """
@@ -173,7 +195,7 @@ def checkloss(now, RTT, packetsequence, outstandingseq, lostseq):
       # if a packet was sent more than 2*RTT ago, it's considered lost
       lostseq[rate].append(id)   #lostseq[rate].append((id, sendtime))
 
-  samplerate(now, lostseq, rate)
+  samplerate(sequenceno, now, lostseq, rate)
   
   if lostseq[rate] != []:
     seqlimit = max(lostseq[rate])  # find the largest seq in lostseq
@@ -279,7 +301,7 @@ def sendpackets(sequenceno, packetsequence, outstandingseq):
       RTT = estimateRTT(recentobservedRTTs[currentbitrate[0]])
       if oldestpktsendtime != [] and (timestamp - oldestpktsendtime[0]) > 2*RTT:
         listlock.acquire(True)
-        checkloss(timestamp, RTT, packetsequence, outstandingseq, lostseq)
+        checkloss(sequenceno, timestamp, RTT, packetsequence, outstandingseq, lostseq)
         listlock.release()
         del oldestpktsendtime[0:len(oldestpktsendtime)]
     
@@ -333,7 +355,7 @@ PERMWIN = range(0, 900)  # when seq%WINSIZE falls in this rage, the packet is pe
 TEMPWIN = range(900, WINSIZE)
 
 sleeptime = [0, 0.1/1000, 0.2/1000, 0.3/1000, 0.4/1000, 0.5/1000, 
-             0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1/1000]  # hard coded
+             0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1.0/1000]  # hard coded
 
 currentbitrate = [0]    # global variable that controls sleeping time
 recentobservedRTTs = {}
