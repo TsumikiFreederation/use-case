@@ -32,3 +32,11 @@ def logifdebug(DEBUG, string):
     log(string + '\n')
   else: 
     return 
+
+
+def estimateRTT(recentobservedRTTs):
+  """
+  Returns the max value of recent RTTs
+  """
+  return max(recentobservedRTTs)
+  #return sum(recentobservedRTTs)/len(recentobservedRTTs)

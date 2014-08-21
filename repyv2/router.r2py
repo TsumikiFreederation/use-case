@@ -19,13 +19,6 @@
 dy_import_module_symbols("outstandingseq.r2py")
 dy_import_module_symbols("routercommon.r2py")
 
-
-def estimateRTT(recentobservedRTTs):
-  """
-  Returns the max value of recent RTTs
-  """
-  return max(recentobservedRTTs)
-  #return sum(recentobservedRTTs)/len(recentobservedRTTs)
     
 
 def recvack(routerlistensocket, packetsequence, recentobservedRTTs, outstandingseq):
