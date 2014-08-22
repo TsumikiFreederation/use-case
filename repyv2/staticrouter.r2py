@@ -28,13 +28,15 @@ def ispermanent(seq):
   selection, thus all other temp packets get return None.
   """
   # IB: need better comment: "permanent" is an undefined keyword.
-  if seq % WINSIZE in PERMWIN:
-    return 1
-  elif seq % WINSIZE == 900:
-    return 0
-  else: 
-    return None
 
+  draw = random_int_below(WINSIZE+1) # draw a random packet for sampling
+  
+  if draw % WINSIZE == 0:
+    log(str(seq) + " is temp, sampling.\n")
+    return 0
+  else:
+    log(str(seq) + " is perm\n")
+    return 1
     
 
 def existconsequtivelosses(lostseq, rate, n):
@@ -115,7 +117,10 @@ def selecttemprate(lostseq, oldrate):
   random_shuffle(candidate)  # random shuffling rates
   
   currentRTTs = recentobservedRTTs[oldrate]
-  current_txtime = sum(currentRTTs)/len(currentRTTs)
+  if currentRTTs != []:
+    current_txtime = sum(currentRTTs)/len(currentRTTs)
+  else:
+    current_txtime = 0
   
   for rate in candidate:
     RTTlist = recentobservedRTTs[rate]
@@ -140,22 +145,20 @@ def samplerate(sequenceno, now, lostseq):
   """
 
   oldrate = currentbitrate[0]
+  permanent = ispermanent(sequenceno)
   
-  if ispermanent(sequenceno) == 1:
+  if permanent == 1:
     if existconsequtivelosses(lostseq, oldrate, 4) == True:
       log("1.1 successive 4 fails happened at rate " + str(oldrate) + ". ")
       selectpermrate(lostseq, oldrate)
     else:
       log("1.2 fewer than successive 4 fails happened at rate " + str(oldrate) + "\n\n")
       
-  elif ispermanent(sequenceno) == 0: # first temp packet needs new rate
+  elif permanent == 0: # first temp packet needs new rate
     # select a random rate that (1) has no 4 succcessive fails and 
     # (2) min(txtime) < avg(current txtime)
     log("2.0 temp packets at " + str(oldrate) + " ")
     selecttemprate(lostseq, oldrate)
-
-  #else:
-  #  log("sending at temp rate: " + str(oldrate) + "\n\n")
     
     
 
@@ -255,7 +258,7 @@ def sendpackets(sequenceno, packetsequence, outstandingseq):
     if oldestpktsendtime == []:
       oldestpktsendtime.append([])
       oldestpktsendtime[0] = timestamp
-
+    
     # based on recently observed RTTs, find/check/remove packets older than 2RTT
     if recentobservedRTTs[currentbitrate[0]] != []:
       RTT = estimateRTT(recentobservedRTTs[currentbitrate[0]])
@@ -295,15 +298,14 @@ LENGTH = 1000    # packet length (change for different tx rates)
 DEBUG = 0     # output some debug messages if DEBUG == 1 
 RTTWIN = 30     # keep the most recent for RTTWIN packets
 
-WINSIZE = 1000  # the last 100 in 1000 are temp packets, others are permanent
-PERMWIN = range(0, 900)  # when seq%WINSIZE falls in this rage, the packet is permanent
-
+WINSIZE = 10  # the last 100 in 1000 are temp packets, others are permanent
 sleeptime = [0, 0.1/1000, 0.2/1000, 0.3/1000, 0.4/1000, 0.5/1000, 
              0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1.0/1000]  # hard coded
 
 currentbitrate = [0]    # global variable that controls sleeping time
 recentobservedRTTs = {} # record the most recent RTTWIN RTTs for each rate
 lostseq = {}            # record the lost packet sequence for each rate
+#temppacket = [0]       # global variable that indicates it's the start of temp packets
 
 for rate in sleeptime:  
   # initialize data struct for link stats
@@ -314,7 +316,7 @@ listlock = createlock() # to sync data structure updates in different threads
 oldestpktsendtime = []   # record the time when the oldest pkt was sent
 
 (localip, localport) = (getmyip(), 63100)
-(destip, destport) = ('206.87.192.157', 63101)  # this needs to be phone's IP
+(destip, destport) = ('206.87.194.70', 63101)  # this needs to be phone's IP
 
 log("my IP: " + localip + '\n')
 
