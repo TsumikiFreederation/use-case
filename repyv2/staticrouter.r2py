@@ -60,16 +60,27 @@ def existconsequtivelosses(lostseq, rate, n):
   return False
 
 
+def findcandidate(lostseq, oldrate, num):
+  """
+  Find candidate rates that are other than oldrate, and have num
+  consecutive failures.
+  """
+  candidate = []
+  for t in sleeptime:
+    if t!= oldrate and existconsequtivelosses(lostseq, t, num) == False:
+      candidate.append(t)
+      
+  return candidate
+
+
+
 def selectpermrate(lostseq, oldrate):
   """
   Select the highest rate without 4 successive failures if exist.
   Otherwise select the rate with lowest average transmission time.
   """
   selected = None  
-  candidate = []
-  for t in sleeptime:
-    if t!= oldrate and existconsequtivelosses(lostseq, t, 4) == False:
-      candidate.append(t)
+  candidate = findcandidate(lostseq, oldrate, 4)
       
   if candidate != []:  # select the highest rate that has no 4 succcessive fails
     currentbitrate[0] = min(candidate)
@@ -100,11 +111,7 @@ def selecttemprate(lostseq, oldrate):
   (2) have a minimum transmission time lower than the currentrate's 
   average transmission time.
   """
-  candidate = []
-  for t in sleeptime:
-    if t!= oldrate and existconsequtivelosses(lostseq, t, 4) == False:
-      candidate.append(t)
-
+  candidate = findcandidate(lostseq, oldrate, 4)
   random_shuffle(candidate)  # random shuffling rates
   
   currentRTTs = recentobservedRTTs[oldrate]
