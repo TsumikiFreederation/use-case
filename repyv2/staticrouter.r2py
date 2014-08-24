@@ -134,7 +134,7 @@ def selecttemprate(lostseq, oldrate):
 
 
   
-def samplerate(packetinfo, firstid, lastid, lostseq):
+def samplerate(sequenceno, packetinfo, firstid, lastid, lostseq):
   """
   Given lost packets, adjust sending rate. 
   """
@@ -159,7 +159,8 @@ def samplerate(packetinfo, firstid, lastid, lostseq):
       else: # failed == True 
         if rateofseq == currentpermrate:
           log("successive 4 fails happened at rate " + str(rateofseq) + 
-              " when seq = " + str(seq) + '.')
+              " when seq = " + str(seq) + '. starting from ' + 
+              str(sequenceno))
           selectpermrate(lostseq, currentpermrate)
         break
 
@@ -167,7 +168,7 @@ def samplerate(packetinfo, firstid, lastid, lostseq):
     
     
 
-def checkloss_static(now, RTT, packetinfo, outstandingseq):
+def checkloss_static(sequenceno, now, RTT, packetinfo, outstandingseq):
   """
   Every 2*RTT check pkt loss, delete outdated packets.
   """
@@ -188,9 +189,9 @@ def checkloss_static(now, RTT, packetinfo, outstandingseq):
   for (seq, (rate, sendtime)) in packetlist:
     # if a packet was sent more than 2RTT ago and not ack-ed, it's considered lost
     if sendtime < timethresh:
-      #log("(" + str(seq) + ", " + str(rate) + ", " + str(sendtime) + ')\n')
       lostseq[rate].append(seq)  
       lastid = seq
+      #log(str(seq) + ', ' + str(rate) + ', ' + str(sendtime) + '\n')
       if len(lostseq[rate]) == NUMLOSS:
         # check if it contains 4 (NUMLOSS) seccesive ids
         if existconsecutivelosses(lostseq[rate], NUMLOSS) == True:
@@ -208,7 +209,7 @@ def checkloss_static(now, RTT, packetinfo, outstandingseq):
     log("\nchecking " + str(firstid) + " to " + str(lastid) + 
       ' (older than 2RTTs) \nlostseq: ' + str(lostseq) + 
       '\nratefailed: ' + str(ratefailed) + '\n\n')
-    samplerate(packetinfo, firstid, lastid, lostseq)
+    samplerate(sequenceno, packetinfo, firstid, lastid, lostseq)
 
   numlost = findlessthan(outstandingseq, lastid)
   
@@ -305,14 +306,31 @@ def sendpackets(sequenceno, packetinfo, outstandingseq):
         RTT = estimateRTT(recentobservedRTTs[currentbitrate[0]])
         if (timestamp - oldestpktsendtime[0]) > 2*RTT:
           listlock.acquire(True)
-          checkloss_static(timestamp, RTT, packetinfo, outstandingseq)
+          checkloss_static(sequenceno, timestamp, RTT, packetinfo, outstandingseq)
           oldestrate, oldestpktsendtime[0] = firstsendtime(packetinfo)
           listlock.release()
           
       sleep(currentbitrate[0])  # sleep for perm rate sec
     
     sequenceno = sequenceno + 1
-  
+
+
+    
+def resetstats():
+  """
+  A closure that resets packet stats every RESETWIN secs.
+  """
+  def reset():
+    """
+    Inside of the closure
+    """
+    while True:
+      sleep(RESETWIN)
+      for rate in sleeptime:  
+        ratefailed[rate] = [False, None]
+      
+  return reset
+
 
 def main():
   """
@@ -332,6 +350,9 @@ def main():
   createthread(recvack(routerlistensocket, packetinfo, 
                      recentobservedRTTs, outstandingseq))
 
+  # thread that resets the failures for each rate every 10sec 
+  createthread(resetstats())
+
   sendpackets(sequenceno, packetinfo, outstandingseq)
 
 
@@ -339,6 +360,7 @@ def main():
 LENGTH = 1000    # packet length (change for different tx rates)
 DEBUG = 0        # output some debug messages if DEBUG == 1 
 RTTWIN = 30      # keep the most recent for RTTWIN packets
+RESETWIN =  10   # number of secs to reset packet stats
 NUMLOSS = 4      # if NUMLOSS happened consecutively, change rate  
 WINSIZE = 1000     # the last 100 in 1000 are temp packets, others are permanent
 PERMWIN = range(1, 900)         # if packet seq falls in this range [1, 900), it's permanent
