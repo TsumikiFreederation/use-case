@@ -65,8 +65,8 @@ def delfromoutstandingseq(seq, outstandingseq):
             rangeinsert(seq+1, right, outstandingseq, index+1)
             return
           
-  raise RangeException("Packet seq not found", 
-            [str(seq) + " is not in outstandingseq: " + str(outstandingseq)])    
+  #raise RangeException("Packet seq not found", 
+  #          [str(seq) + " is not in outstandingseq: " + str(outstandingseq)])    
 
 
 def addtooutstandingseq(seq, outstandingseq):

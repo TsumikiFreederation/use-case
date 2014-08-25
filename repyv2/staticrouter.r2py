@@ -45,15 +45,6 @@ def existconsecutivelosses(seqlist, n):
   return True
 
 
-def firstsendtime(packetinfo):
-  """
-  Find first packet in packetinfo that has not been deleted.
-  """
-  minsequence = min(packetinfo)  # find the smallest key
-  return packetinfo[minsequence]
-
-
-
 def findcandidate(lostseq, oldrate, num):
   """
   Find candidate rates that are other than oldrate, and have num
