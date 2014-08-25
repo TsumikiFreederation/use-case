@@ -169,11 +169,12 @@ def sendpackets(sequenceno, packetinfo, outstandingseq):
   totalbits = 0   # record total bytes received
   totaltime = 0
   throughput = 0                 # initial rate is 0
+  payload = "|" + '0'*LENGTH
   lastchecktime = getruntime()   # record total time spent over a CYCLE 
 
   while True:     
     # router sends a bunch of packets to the client
-    packet = str(sequenceno) + "|" + '0'*LENGTH 
+    packet = str(sequenceno) + payload
     timestamp = getruntime()  # record (seq, sendtime)
     packetinfo[sequenceno] = (currentbitrate[0], timestamp)
       

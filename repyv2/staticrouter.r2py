@@ -25,12 +25,9 @@ def ispermanent(seq):
   """
   Return if a packet seq # is temporary (0) or not (1).
   """
-
-  if seq % WINSIZE in PERMWIN:
+  if (seq % WINSIZE) <= PERMSEQTHRESH:
     return 1
-  
-  if seq % WINSIZE in TEMPWIN:
-    return 0
+  return 0
     
 
 def existconsecutivelosses(seqlist, n):
@@ -41,10 +38,10 @@ def existconsecutivelosses(seqlist, n):
   for i in range(0, n-1):
     if seqlist[i+1] != seqlist[i] + 1:
       return False
-    
   return True
 
 
+# TODO: better name
 def findcandidate(lostseq, oldrate, num):
   """
   Find candidate rates that are other than oldrate, and have num
@@ -53,7 +50,7 @@ def findcandidate(lostseq, oldrate, num):
   candidate = []
   
   for t in sleeptime:
-    if t!= oldrate:
+    if t != oldrate:
       if ratefailed[t][0] == False:
         candidate.append(t)
       
@@ -62,18 +59,26 @@ def findcandidate(lostseq, oldrate, num):
 
 def selectfastrate():
   """
-  Select the 
+  Select the  ?? TODO
   """
+
+  # TODO: refactor this to call a method for a specific t to find
+  # avgtxtime
   txtime = {}
+
+  # TODO: instead of sleeptimes, use sleeptimes that are not failed
   for t in sleeptime:
-    RTTlist = recentobservedRTTs[t]
-    if RTTlist != []:
-      avgtxtime = sum(RTTlist)/len(RTTlist)
-      #log("rate: " + str(t) + " avg txtime: " + str(avgtxtime) + '\n')
-      txtime[t] = avgtxtime
+    if ratefailed[t][0]:
+      txtime[t] = 9999
     else:
-      #log("rate: " + str(t) + " avg txtime: 0\n")
-      txtime[t] = 0
+      RTTlist = recentobservedRTTs[t]
+      if RTTlist != []:
+        avgtxtime = sum(RTTlist)/len(RTTlist)
+        #log("rate: " + str(t) + " avg txtime: " + str(avgtxtime) + '\n')
+        txtime[t] = avgtxtime
+      else:
+        #log("rate: " + str(t) + " avg txtime: 0\n")
+        txtime[t] = 0
 
   minrate = min(txtime, key=txtime.get)   # the rate that has the lowest tx time
   currentbitrate[0] = minrate
@@ -84,28 +89,30 @@ def selectfastrate():
 
 def selectpermrate(lostseq, oldrate):
   """
-  Select the highest rate without 4 successive failures if exist.
+  Select the highest rate without NUMLOSS successive failures if exist.
   Otherwise select the rate with lowest average transmission time.
   """
   selected = None  
-  candidate = findcandidate(lostseq, oldrate, 4)
+  candidates = findcandidate(lostseq, oldrate, NUMLOSS)
       
-  if candidate != []:  # select the highest rate that has no 4 succcessive fails
-    currentbitrate[0] = min(candidate)
-    #log("new perm rate (highest rate with no successive 4 fails): " 
+  if candidates != []:  # select the highest rate that has no NUMLOSS succcessive fails
+    currentbitrate[0] = min(candidates)
+    # TODO: what do we do in the else case?? (under-specified in the NSDI paper)
+    #log("new perm rate (highest rate with no successive NUMLOSS fails): " 
     #    + str(currentbitrate[0]) + '\n\n')     
     
 
 
 def selecttemprate(lostseq, oldrate):
   """
-  Select a random rate that (1) has not failed n successive times and 
-  (2) have a minimum transmission time lower than the currentrate's 
+  Select a random rate that (1) has not failed NUMLOSS successive times and 
+  (2) have a minimum transmission time lower than the currentrate's (oldrate)
   average transmission time.
   """
-  candidate = findcandidate(lostseq, oldrate, 4) # find rates with no 4 fails
+  candidate = findcandidate(lostseq, oldrate, NUMLOSS) # find rates with no NUMLOSS fails
   random_shuffle(candidate)  # random shuffling rates
-  
+
+  # calculate avg transmission time
   currentRTTs = recentobservedRTTs[oldrate]
   if currentRTTs != []:
     current_txtime = sum(currentRTTs)/len(currentRTTs)
@@ -113,7 +120,7 @@ def selecttemprate(lostseq, oldrate):
     current_txtime = 0
     
   #log("avg tx time of " + str(oldrate) + ":" + str(current_txtime) + '\n')
-  #log("min tx time: among " + str(candidate) + " (has no 4 succcessive fails): \n") 
+  #log("min tx time: among " + str(candidate) + " (has no NUMLOSS succcessive fails): \n") 
   for rate in candidate:
     RTTlist = recentobservedRTTs[rate]
     if RTTlist != []:
@@ -122,46 +129,18 @@ def selecttemprate(lostseq, oldrate):
       minrate = 0
         
     #log(str(rate) + ":" + str(minrate) + '\n')
+    # set the temp rate if it satisfies the condition
     if minrate <= current_txtime:
       currentbitrate[1] = rate
-      break
+      return
       
   #log("new temp rate set at seq: " + str(currentbitrate[1]) + '\n\n')
 
 
   
-def samplerate(sequenceno, packetinfo, seqtocheck, lostseq):
-  """
-  Given lost packets, adjust sending rate. 
-  """
 
-  # seq no should be the no. that is the largest no. two RTTs ago, not the current
-  # iterate over all no.'s that are <= the no. above
-  # for all _seq_ <= the above no.
-  currentpermrate = currentbitrate[0]
-  for seq in seqtocheck: 
-    if ispermanent(seq) == 1:     
-      # if current rate is the rate of the _seq_, and 
-      # S consecutive losses (reuse the lostseq 3 id's), let it influence the current rate
-      # select perm rate
-      rateofseq, sendtime = packetinfo[seq]
-      failed, timefailed = ratefailed[rateofseq]
-      
-      if failed == True:
-        if rateofseq == currentpermrate:
-          #log("successive 4 fails happened at rate " + str(rateofseq) + 
-          #    " when seq = " + str(seq) + '. starting from ' + str(sequenceno))
-          selectpermrate(lostseq, currentpermrate)
-          break
-        
-      else: # failed == False 
-        #log("fewer than successive 4 fails at rate of seq " 
-        #    + str(seq) + ': ' + str(rateofseq) + ".")
-        selectfastrate()
-        break    
     
-    
-
+# TODO: better name
 def checkloss_static(sequenceno, now, RTT, packetinfo, outstandingseq):
   """
   Every 2*RTT check pkt loss, delete outdated packets.
@@ -171,12 +150,14 @@ def checkloss_static(sequenceno, now, RTT, packetinfo, outstandingseq):
   
   timethresh = now - 2*RTT
 
-  # repy does not allow sort!
-  packetlist = packetinfo.items()[:]  
-  # sort packetinfo by packet seq number
-  packetlist.sort()  
-  seqtocheck = []   # record the packet seq that need to check (two RTTs ago)
+  # list of (seq, (rate, sendtime))
+  packetlist = packetinfo.items()  
+  # sort list by first field -- packet seq number
+  packetlist.sort()     
 
+  # record the packet seq that need to check (two RTTs ago): [firstid, lastid]
+  firstid = min(packetinfo)
+  lastid = 0
   #log(str(packetlist) + "\nchecking time before: " + str(timethresh) + "\n\n")
   
   for (seq, (rate, sendtime)) in packetlist:
@@ -184,35 +165,46 @@ def checkloss_static(sequenceno, now, RTT, packetinfo, outstandingseq):
     # if a packet was sent more than 2RTT ago and not ack-ed, it's considered lost
     if sendtime < timethresh:
       lostseq[rate].append(seq)  
-      seqtocheck.append(seq)
+      lastid = seq
       #log(str(seq) + ', ' + str(rate) + ', ' + str(sendtime) + '\n')
       if len(lostseq[rate]) == NUMLOSS:
-        # check if it contains 4 (NUMLOSS) seccesive ids
-        if existconsecutivelosses(lostseq[rate], NUMLOSS) == True:
-          # remmeber this failure, if threading, grab lock
+        # check if it contains NUMLOSS (NUMLOSS) seccesive ids
+        if existconsecutivelosses(lostseq[rate], NUMLOSS):
+          # remember this failure, if threading, grab lock
           ratefailed[rate] = [True, sendtime]
-        # delete the first id (even they are not 4 seccesive ids)
-        # always keep <= 3 ids
-        lostseq[rate].pop(0)
+          lostseq[rate] = []
+        else:
+          # delete the first id (even they are not NUMLOSS seccesive ids)
+          # always keep <= 3 ids
+          lostseq[rate].pop(0)
     else:
-      break      
+      # guaranteed to have greater timestamps for all packets with
+      # larger seq no in packetlist
+      break
+    
   # done checking lost packets for the past 2RTTs 
-  
-  if seqtocheck != []:
-    # possibly change sending rate depending on losses
-    #log("\nchecking " + str(seqtocheck[0]) + " to " + 
-    #    str(seqtocheck[-1]) + ' (older than 2RTTs) \nlostseq: ' 
-    #    + str(lostseq) + '\nratefailed: ' + str(ratefailed) + '\n\n')
-    samplerate(sequenceno, packetinfo, seqtocheck, lostseq)
+  if lastid >= firstid:
+    currentpermrate = currentbitrate[0]
+    if ratefailed[currentpermrate][0]:
+      selectpermrate(lostseq, currentpermrate)
+    else:
+      # fast rate
+      selectfastrate()
 
-    numlost = findlessthan(outstandingseq, seqtocheck[-1])  
-    for seq in numlost:
-      try:
-        del packetinfo[seq]
-      except KeyError:
-        # possibily recvack got this seq's ack
-        pass
-    removelessthan(outstandingseq, seqtocheck[-1])
+    # clean up packets older than 2*RTTs
+    if outstandingseq != []:
+      numlost = findlessthan(outstandingseq, lastid) 
+      
+      for seq in numlost:
+        try:
+          del packetinfo[seq]
+        except KeyError:
+          # possibily recvack got this seq's ack
+          pass
+      removelessthan(outstandingseq, lastid)
+  else:
+    # fast rate
+    selectfastrate()
 
 
     
@@ -264,32 +256,26 @@ def sendpackets(sequenceno, packetinfo, outstandingseq):
   """
   Sends packets to the receiver.
   """
+  payload = "|" + '0'*LENGTH
+   
   while True:     
     # router sends a bunch of packets to the client
-    packet = str(sequenceno) + "|" + '0'*LENGTH 
-    timestamp = getruntime()  # record (seq, sendtime)
-    if ispermanent(sequenceno) == 1:
-      packetinfo[sequenceno] = (currentbitrate[0], timestamp)
-    else:
-      packetinfo[sequenceno] = (currentbitrate[1], timestamp)
-    
-    listlock.acquire(True)
-    addtooutstandingseq(sequenceno, outstandingseq)
-    listlock.release()
-    sendmessage(destip, destport, str(packet), localip, localport)
+    packet = str(sequenceno) + payload
+    timestamp = getruntime()  
 
+    # initialize the time when we sent the oldest, un-acked packet
     if oldestpktsendtime == []:
       oldestpktsendtime.append([])
-      oldestpktsendtime[0] = timestamp
+      oldestpktsendtime[0] = timestamp  
 
-    if ispermanent(sequenceno) == 0: # temp packets
+    if ispermanent(sequenceno) == 0: # temp packets: select temp rate for this seq number
       if temppacketset[0] == 0:
+        # we haven't selected a temp rate for this train of packets
         #log("1.0 temp packet " + str(sequenceno) + " at " + str(currentbitrate[0]) + " ")
         selecttemprate(lostseq, currentbitrate[0])
         temppacketset[0] = 1
-        
-      sleep(currentbitrate[1])  # sleep for temp rate sec
-        
+      timetosleep = currentbitrate[1]
+              
     else:  # permanent packets
       temppacketset[0] = 0
       # based on recently observed RTTs, find/check/remove packets older than 2RTT
@@ -297,15 +283,26 @@ def sendpackets(sequenceno, packetinfo, outstandingseq):
         RTT = estimateRTT(recentobservedRTTs[currentbitrate[0]])
         if (timestamp - oldestpktsendtime[0]) > 2*RTT:
           listlock.acquire(True)
+          # check loss, set perm rate
           checkloss_static(sequenceno, timestamp, RTT, packetinfo, outstandingseq)
           if packetinfo != {}:
-            oldestrate, oldestpktsendtime[0] = firstsendtime(packetinfo)
+            _, oldestpktsendtime[0] = firstsendtime(packetinfo)
           listlock.release()
-          
-      sleep(currentbitrate[0])  # sleep for perm rate sec
-    
-    sequenceno = sequenceno + 1
+      timetosleep = currentbitrate[0]
 
+    # save info for this seq no -- rate and timestamp
+    packetinfo[sequenceno] = (timetosleep, timestamp)
+    
+    listlock.acquire(True)
+    addtooutstandingseq(sequenceno, outstandingseq)
+    listlock.release()
+
+    ###############
+    sendmessage(destip, destport, str(packet), localip, localport)
+    ###############
+    
+    sleep(timetosleep)    
+    sequenceno = sequenceno + 1
 
     
 def resetstats():
@@ -318,9 +315,14 @@ def resetstats():
     """
     while True:
       sleep(RESETWIN)
+      currentime = getruntime()
       #log("resetting stats...\n")
       for rate in sleeptime:  
-        ratefailed[rate] = [False, None]
+        if ratefailed[rate][1] != None and ratefailed[rate][1] < currentime - RESETWIN:
+          # automatically expires packet info if older than RESETWIN secs
+          ratefailed[rate] = [False, None]
+          # reset observation about RTTs for the rate
+          recentobservedRTTs[rate] = []
       
   return reset
 
@@ -356,9 +358,9 @@ RTTWIN = 30      # keep the most recent for RTTWIN packets
 RESETWIN = 10    # number of secs to reset packet stats
 NUMLOSS = 4      # if NUMLOSS happened consecutively, change rate  
 WINSIZE = 1000     # the last 100 in 1000 are temp packets, others are permanent
-PERMWIN = range(1, 900)         # if packet seq falls in this range [1, 900), it's permanent
-TEMPWIN = range(900, WINSIZE+1) # if packet seq falls in this range [900, WINSIZE], it's temp
+PERMSEQTHRESH = 900         # if packet seq falls in this range [1, 900), it's permanent
 
+# NSDI paper has 8 rates, we have 11
 sleeptime = [0, 0.1/1000, 0.2/1000, 0.3/1000, 0.4/1000, 0.5/1000, 
              0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1.0/1000]  # hard coded
 

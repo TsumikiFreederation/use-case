@@ -106,21 +106,21 @@ def findlessthan(outstandingseq, seqlimit):
   """
   
   lessthanseqlimit = []
-
+  num = 0
+  
   for subrange in outstandingseq:
     if len(subrange) == 1:
-      left = subrange[0]
-      if left <= seqlimit:
-        lessthanseqlimit.append(left)
-      else:
-        return lessthanseqlimit
+      num = subrange[0]
+      if num <= seqlimit:
+        lessthanseqlimit.append(num)      
     else:  # len(subrange) == 2
       left, right = subrange
       for num in range(left, right+1):
         if num <= seqlimit:
           lessthanseqlimit.append(num)
-        else:
-          return lessthanseqlimit
+          
+    if num >= seqlimit:
+      return lessthanseqlimit
 
 
 def removelessthan(outstandingseq, seqlimit):
