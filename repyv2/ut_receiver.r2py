@@ -36,8 +36,8 @@ def recvack():
   
   while True: 
     try:     
-      # receive ack and movement hint from client
-      remoteip, remoteport, message = phonelistensocket.getmessage()
+      # receive packets from sender
+      remoteip, remoteport, message = listensocket.getmessage()
       # if there is SocketWouldBlockError, the rest will be skipped
         
       (seq, payloadlen) = deserializepacket(message)  # TODO: use movement info   
@@ -69,8 +69,7 @@ outstandingseq = [[1, NUMPKTS]]
 CYCLE = 1  # time duration to calculate throughput
 
 (localip, localport) = (getmyip(), 63101)
-(destip, destport) = ('128.189.201.34', 63100) # TODO: this needs to be router's IP
-phonelistensocket = listenformessage(localip, localport)
+listensocket = listenformessage(localip, localport)
 
 log(getmyip() + '\n')
 
