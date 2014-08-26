@@ -29,14 +29,15 @@ def checklossrate():
   """
   numlost = 0
   for subrange in outstandingseq:
-    if length(subrange) == 1:
+    if len(subrange) == 1:
       numlost = numlost + 1
     else:    
       left, right = subrange 
       numlost = numlost + (right - left + 1)
 
   lossrate = float(numlost)/NUMPKTS
-  log("lossrate: " + str(lossrate) + '\n')
+  log(str(numlost) + " packets were lost out of " + 
+    str(NUMPKTS) + ". lossrate: " + str(lossrate) + '\n')
   return lossrate
   
 
@@ -44,11 +45,11 @@ def recvack():
 
   totalbits = 0   # record total bytes received
   totaltime = 0
-  throughput = 0 
-  counter = 0  
+  throughput = 0  
   lastchecktime = getruntime()   # record total time spent over a CYCLE 
   
   while True: 
+          
     try:     
       # receive packets from sender
       remoteip, remoteport, message = listensocket.getmessage()
@@ -61,25 +62,27 @@ def recvack():
       delfromoutstandingseq(int(seq), outstandingseq)
       currenttime = getruntime()
       totaltime = currenttime - lastchecktime
+      
       if totaltime > CYCLE:
         # check throughput and movement every CYCLE sec
         lastchecktime = currenttime # reset clock
         throughput = float(totalbits)/(totaltime)/1000000 
-        log("recv rate " + str(throughput) + " Mbps\n")
+        log(str(throughput) + "\n")
         totalbits = 0
-
-        counter = counter + 1
-        if counter > TIMEOUT:
-          checklossrate()
-          break
         
     except SocketWouldBlockError:
-      pass
+      currenttime = getruntime()
+      timeouttime = currenttime - lastchecktime
+      if timeouttime > TIMEOUT:
+        checklossrate()
+        #log(str(totaltime) + '\n')
+        break
+      #pass
 
 
 ############ define protocol parameters ############   
-NUMPKTS = 1000 # number of packets to send for each sleeptime
-TIMEOUT = 10 # number of rounds to timeout packets (very rough)
+NUMPKTS = 50000 # number of packets to send for each sleeptime
+TIMEOUT = 5 # number of rounds to timeout packets (very rough)
 outstandingseq = [[1, NUMPKTS]]
 
 CYCLE = 1  # time duration to calculate throughput

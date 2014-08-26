@@ -55,7 +55,7 @@ DEBUG = 0  # output some debug messages if DEBUG == 1
 CYCLE = 1  # time duration to calculate throughput
 
 (localip, localport) = (getmyip(), 63101)
-(destip, destport) = ('128.189.201.34', 63100) # TODO: this needs to be router's IP
+(destip, destport) = ('128.189.202.188', 63100) # TODO: this needs to be router's IP
 
 log(getmyip() + '\n')
 
@@ -84,7 +84,7 @@ while True:
       # check throughput and movement every CYCLE sec
       lastchecktime = currenttime # reset clock
       throughput = float(totalbits)/(totaltime)/1000000 
-      log("recv rate: " + str(throughput) + " Mbps\n")
+      log(str(currenttime) + '\t' + str(throughput) + "\n")
       totalbits = 0  # reset bits
       move = getmovement()
       ack = seq + "|" + str(move)
