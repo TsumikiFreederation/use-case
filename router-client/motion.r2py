@@ -52,11 +52,11 @@ t = 0
 # first 50 loops, when the filtered accel. data has plateaued.
 
 # Phone should be motionless during this time
-for i in range (1, 101):
+for i in range (1, 150):
     try:
         ss = filter()
 
-        if (i > 49):
+        if (i > 99):
             t += ss
 
         sleep(0.05)
@@ -70,6 +70,10 @@ for i in range (1, 101):
 t = t/50
 sensor_data = request_data(sensor_socket, 'ttsSpeak', ['Threshold set to ' + str(round(t, 3))])
 
+# Thresholds for indicating start/stop of movements
+tStop = t * 0.065
+tStart = t * 0.075
+
 # Count is used as a marker of how many times you have significantly exceeded the threshold
 count = 0
 # Moving is the flag indicating whether or not the user is moving
@@ -80,10 +84,10 @@ while(True):
         ss = filter()
 
         if (moving):
-            if ((0.95 * t) < ss < (1.05 * t)):
+            if ((t - tStop) < ss < (t + tStop)):
                 # It takes more "counts" to "stop" moving than to "start" moving, to avoid indicating a
                 # stopped user, when theyare only changing acceleration (i.e. if phone in is pants pocket)
-                if (count == 6 ):
+                if (count == 5):
                     sensor_data = request_data(sensor_socket, 'ttsSpeak', ["Stop"])
                     moving = False
                     count = 0
@@ -92,8 +96,8 @@ while(True):
             else:
                 count = 0
         else:
-            if ((0.95 * t) > ss or ss > (1.05 * t)):
-                if (count == 4 ):
+            if ((t - tStart) > ss or ss > (t + tStart)):
+                if (count == 2):
                     sensor_data = request_data(sensor_socket, 'ttsSpeak', ["Start"])
                     moving = True
                     count = 0
@@ -102,7 +106,7 @@ while(True):
             else:
                 count = 0
 
-        sleep(0.05)
+        sleep(0.01)
 
     except Exception as e:
         log(str(e), '\n')
