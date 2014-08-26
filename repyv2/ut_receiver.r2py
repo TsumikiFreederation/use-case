@@ -1,0 +1,72 @@
+"""
+<Program Name>
+  ut_receiver.r2py
+
+<Started>
+  Aug 25, 2014
+
+<Author>
+  Yanyan Zhuang
+
+<Purpose>
+  A receiver that observes the ralationship between packet loss and throughput.
+"""
+
+dy_import_module_symbols("outstandingseq.r2py")
+
+
+def deserializepacket(packet):    
+  """
+  Returns the sequence of the packet, and payload length in bits.
+  """
+  seq, payload = packet.split("|")
+  return (seq, len(packet)*8)  # 1 byte = 8 bits
+
+
+def checklossrate():
+  log(str(outstandingseq) + '\n')
+  
+
+def recvack():
+
+  totalbits = 0   # record total bytes received
+  totaltime = 0
+  throughput = 0   
+  lastchecktime = getruntime()   # record total time spent over a CYCLE 
+  
+  while True:      
+    # receive ack and movement hint from client
+    remoteip, remoteport, message = routerlistensocket.getmessage()
+    # if there is SocketWouldBlockError, the rest will be skipped
+        
+    (seq, move) = deserialize(message)  # TODO: use movement info         
+    delfromoutstandingseq(int(seq), outstandingseq)
+
+    if seq == "FIN":
+      checklossrate()
+      break
+
+    currenttime = getruntime()
+    totaltime = currenttime - lastchecktime
+    if totaltime > CYCLE:
+      # check throughput and movement every CYCLE sec
+      lastchecktime = currenttime # reset clock
+      throughput = float(totalbits)/(totaltime)/1000000 
+      log("sleep time " + str(currentbitrate[0]) + "sec, send rate " 
+          + str(throughput) + " Mbps\n")
+      totalbits = 0
+    
+
+
+############ define protocol parameters ############   
+NUMPKTS = 1000000 # number of packets to send for each sleeptime
+outstandingseq = [1, NUMPKTS]
+
+CYCLE = 1  # time duration to calculate throughput
+
+(localip, localport) = (getmyip(), 63101)
+(destip, destport) = ('128.189.201.34', 63100) # TODO: this needs to be router's IP
+
+log(getmyip() + '\n')
+
+recvack()

@@ -1,0 +1,45 @@
+"""
+<Program Name>
+  ut_sender.r2py
+
+<Started>
+  Aug 25, 2014
+
+<Author>
+  Yanyan Zhuang
+
+<Purpose>
+  A dummy sender that only sends packets.
+"""
+    
+
+def sendpackets(rate):
+
+  payload = "|" + '0'*LENGTH
+  lastchecktime = getruntime()   # record total time spent over a CYCLE 
+
+  for sequenceno in range(1, NUMPKTS+1):     
+    # router sends a bunch of packets to the client
+    if sequenceno == NUMPKTS:
+      packet = "FIN" + payload  # end of this packet train
+    else:
+      packet = str(sequenceno) + payload
+      
+    sendmessage(destip, destport, str(packet), localip, localport)
+    sleep(rate)  # sleep for currentbitrate sec
+    
+    
+
+############ define protocol parameters ############   
+LENGTH = 1000    # packet length (change for different tx rates)
+NUMPKTS = 1000000 # number of packets to send for each sleeptime
+
+sleeptime = [0, 0.1/1000, 0.2/1000, 0.3/1000, 0.4/1000, 0.5/1000, 
+             0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1.0/1000]  # hard coded
+
+(localip, localport) = (getmyip(), 63100)
+(destip, destport) = ('206.87.193.14', 63101)  # TODO: this needs to be phone's IP
+log("my IP: " + localip + '\n')
+
+rate = sleeptime[0]
+sendpackets(rate)
