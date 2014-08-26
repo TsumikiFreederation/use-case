@@ -34,38 +34,43 @@ def recvack():
   throughput = 0   
   lastchecktime = getruntime()   # record total time spent over a CYCLE 
   
-  while True:      
-    # receive ack and movement hint from client
-    remoteip, remoteport, message = routerlistensocket.getmessage()
-    # if there is SocketWouldBlockError, the rest will be skipped
+  while True: 
+    try:     
+      # receive ack and movement hint from client
+      remoteip, remoteport, message = phonelistensocket.getmessage()
+      # if there is SocketWouldBlockError, the rest will be skipped
         
-    (seq, move) = deserialize(message)  # TODO: use movement info         
-    delfromoutstandingseq(int(seq), outstandingseq)
+      (seq, payloadlen) = deserializepacket(message)  # TODO: use movement info   
+      totalbits = totalbits + payloadlen       
+      log(seq + '\n')
 
-    if seq == "FIN":
-      checklossrate()
-      break
+      if seq == 'FIN':
+        delfromoutstandingseq(NUMPKTS, outstandingseq)
+        checklossrate()
+        break
 
-    currenttime = getruntime()
-    totaltime = currenttime - lastchecktime
-    if totaltime > CYCLE:
-      # check throughput and movement every CYCLE sec
-      lastchecktime = currenttime # reset clock
-      throughput = float(totalbits)/(totaltime)/1000000 
-      log("sleep time " + str(currentbitrate[0]) + "sec, send rate " 
-          + str(throughput) + " Mbps\n")
-      totalbits = 0
-    
+      delfromoutstandingseq(int(seq), outstandingseq)
+      currenttime = getruntime()
+      totaltime = currenttime - lastchecktime
+      if totaltime > CYCLE:
+        # check throughput and movement every CYCLE sec
+        lastchecktime = currenttime # reset clock
+        throughput = float(totalbits)/(totaltime)/1000000 
+        log("recv rate " + str(throughput) + " Mbps\n")
+        totalbits = 0
+    except SocketWouldBlockError:
+      pass
 
 
 ############ define protocol parameters ############   
-NUMPKTS = 1000000 # number of packets to send for each sleeptime
-outstandingseq = [1, NUMPKTS]
+NUMPKTS = 80 # number of packets to send for each sleeptime
+outstandingseq = [[1, NUMPKTS]]
 
 CYCLE = 1  # time duration to calculate throughput
 
 (localip, localport) = (getmyip(), 63101)
 (destip, destport) = ('128.189.201.34', 63100) # TODO: this needs to be router's IP
+phonelistensocket = listenformessage(localip, localport)
 
 log(getmyip() + '\n')
 
