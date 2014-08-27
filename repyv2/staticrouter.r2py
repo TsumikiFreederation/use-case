@@ -41,47 +41,46 @@ def existconsecutivelosses(seqlist, n):
   return True
 
 
-# TODO: better name
-def findcandidate(lostseq, oldrate, num):
+
+def findnoconsecutivefails(lostseq, oldrate, num):
   """
   Find candidate rates that are other than oldrate, and have num
   consecutive failures.
   """
-  candidate = []
+  candidates = []
   
   for t in sleeptime:
     if t != oldrate:
       if ratefailed[t][0] == False:
-        candidate.append(t)
+        candidates.append(t)
       
-  return candidate
+  return candidates
 
 
 def selectfastrate():
   """
-  Select the  ?? TODO
+  Select the rate with the lowest transmission time.
   """
-
-  # TODO: refactor this to call a method for a specific t to find
-  # avgtxtime
   txtime = {}
 
-  # TODO: instead of sleeptimes, use sleeptimes that are not failed
   for t in sleeptime:
     if ratefailed[t][0]:
-      txtime[t] = 9999
+      continue
     else:
-      RTTlist = recentobservedRTTs[t]
-      if RTTlist != []:
-        avgtxtime = sum(RTTlist)/len(RTTlist)
-        #log("rate: " + str(t) + " avg txtime: " + str(avgtxtime) + '\n')
-        txtime[t] = avgtxtime
-      else:
-        #log("rate: " + str(t) + " avg txtime: 0\n")
-        txtime[t] = 0
+      txtime[t] = rateavgtxtime(recentobservedRTTs, t)
 
-  minrate = min(txtime, key=txtime.get)   # the rate that has the lowest tx time
-  currentbitrate[0] = minrate
+  if txtime == {}:
+    lessthancurrent = []
+    for t in sleeptime:
+      if t < currentbitrate[0]:
+        lessthancurrent.append(t)
+    if lessthancurrent != []:
+      currentbitrate[0] = max(lessthancurrent)
+    else:
+      currentbitrate[0] = sleeptime[0]
+    #currentbitrate[0] = max(currentbitrate[0]-SLEEPSTEPSIZE, sleeptime[0])
+  else:
+    currentbitrate[0] = min(txtime, key=txtime.get)   # the rate that has the lowest tx time
   #log("new perm rate (rate with lowest tx time): " 
   #          + str(currentbitrate[0]) + '\n\n')
 
@@ -93,11 +92,12 @@ def selectpermrate(lostseq, oldrate):
   Otherwise select the rate with lowest average transmission time.
   """
   selected = None  
-  candidates = findcandidate(lostseq, oldrate, NUMLOSS)
+  candidates = findnoconsecutivefails(lostseq, oldrate, NUMLOSS)
       
   if candidates != []:  # select the highest rate that has no NUMLOSS succcessive fails
     currentbitrate[0] = min(candidates)
     # TODO: what do we do in the else case?? (under-specified in the NSDI paper)
+    # Otherwise select the rate with lowest average transmission time??
     #log("new perm rate (highest rate with no successive NUMLOSS fails): " 
     #    + str(currentbitrate[0]) + '\n\n')     
     
@@ -109,25 +109,16 @@ def selecttemprate(lostseq, oldrate):
   (2) have a minimum transmission time lower than the currentrate's (oldrate)
   average transmission time.
   """
-  candidate = findcandidate(lostseq, oldrate, NUMLOSS) # find rates with no NUMLOSS fails
+  candidate = findnoconsecutivefails(lostseq, oldrate, NUMLOSS) # find rates with no NUMLOSS fails
   random_shuffle(candidate)  # random shuffling rates
 
   # calculate avg transmission time
-  currentRTTs = recentobservedRTTs[oldrate]
-  if currentRTTs != []:
-    current_txtime = sum(currentRTTs)/len(currentRTTs)
-  else:
-    current_txtime = 0
+  current_txtime = rateavgtxtime(recentobservedRTTs, oldrate)
     
   #log("avg tx time of " + str(oldrate) + ":" + str(current_txtime) + '\n')
   #log("min tx time: among " + str(candidate) + " (has no NUMLOSS succcessive fails): \n") 
   for rate in candidate:
-    RTTlist = recentobservedRTTs[rate]
-    if RTTlist != []:
-      minrate = min(RTTlist)
-    else:
-      minrate = 0
-        
+    minrate = ratemintxtime(recentobservedRTTs, rate)
     #log(str(rate) + ":" + str(minrate) + '\n')
     # set the temp rate if it satisfies the condition
     if minrate <= current_txtime:
@@ -140,8 +131,7 @@ def selecttemprate(lostseq, oldrate):
   
 
     
-# TODO: better name
-def checkloss_static(sequenceno, now, RTT, packetinfo, outstandingseq):
+def checkpermloss(sequenceno, now, RTT, packetinfo, outstandingseq):
   """
   Every 2*RTT check pkt loss, delete outdated packets.
   """
@@ -284,7 +274,7 @@ def sendpackets(sequenceno, packetinfo, outstandingseq):
         if (timestamp - oldestpktsendtime[0]) > 2*RTT:
           listlock.acquire(True)
           # check loss, set perm rate
-          checkloss_static(sequenceno, timestamp, RTT, packetinfo, outstandingseq)
+          checkpermloss(sequenceno, timestamp, RTT, packetinfo, outstandingseq)
           if packetinfo != {}:
             _, oldestpktsendtime[0] = firstsendtime(packetinfo)
           listlock.release()
@@ -359,11 +349,6 @@ RESETWIN = 10    # number of secs to reset packet stats
 NUMLOSS = 4      # if NUMLOSS happened consecutively, change rate  
 WINSIZE = 1000     # the last 100 in 1000 are temp packets, others are permanent
 PERMSEQTHRESH = 900         # if packet seq falls in this range [1, 900), it's permanent
-
-# NSDI paper has 8 rates, we have 11
-sleeptime = [0, 0.1/1000, 0.2/1000, 0.3/1000, 0.4/1000, 0.5/1000, 
-             0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1.0/1000]  # hard coded
-
 currentbitrate = [0, 0]    # global variable that controls sleeping time 
                            # (perm rate, temp rate)
 recentobservedRTTs = {} # record the most recent RTTWIN RTTs for each rate
@@ -373,15 +358,15 @@ temppacketset = [0]     # global variable that indicates temp packets rate alrea
 
 for rate in sleeptime:  
   # initialize data struct for link stats
-  recentobservedRTTs[rate] = []  
-  lostseq[rate] = []
-  ratefailed[rate] = [False, None]
-    
+  recentobservedRTTs[float(rate)] = []  
+  lostseq[float(rate)] = []
+  ratefailed[float(rate)] = [False, None]
+
 listlock = createlock() # to sync data structure updates in different threads
 oldestpktsendtime = []   # record the time when the oldest pkt was sent
 
 (localip, localport) = (getmyip(), 63100)
-(destip, destport) = ('206.87.193.14', 63101)  # this needs to be phone's IP
+(destip, destport) = ('206.87.195.106', 63101)  # this needs to be phone's IP
 
 log("my IP: " + localip + '\n')
 

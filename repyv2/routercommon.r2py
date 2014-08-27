@@ -12,6 +12,14 @@
   Common methods called my router code. 
 """
 
+successTimeout = 1
+failureTimeout = 5
+
+# NSDI paper has 8 rates, we have 11
+sleeptime = [0, 0.1/1000, 0.2/1000, 0.3/1000, 0.4/1000, 0.5/1000, 
+             0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1.0/1000]  # hard coded
+  
+
 def deserialize(message):      
   """
   Returns the sequence of the packet, and movement hint.
@@ -41,6 +49,34 @@ def estimateRTT(recentobservedRTTs):
   return max(recentobservedRTTs)
   #return sum(recentobservedRTTs)/len(recentobservedRTTs)
 
+
+def rateavgtxtime(recentobservedRTTs, rate):
+  """
+  Calculates the average tansmission time for a particular rate.
+  """
+  RTTlist = recentobservedRTTs[rate]
+  
+  if RTTlist != []:
+    avgtxtime = sum(RTTlist)/len(RTTlist)
+  else:
+    avgtxtime = 0
+
+  return avgtxtime
+
+
+def ratemintxtime(recentobservedRTTs, rate):
+  """
+  Calculates the average tansmission time for a particular rate.
+  """
+  RTTlist = recentobservedRTTs[rate]
+
+  if RTTlist != []:
+    mintxtime = min(RTTlist)
+  else:
+    mintxtime = 0
+
+  return mintxtime
+  
 
 def firstsendtime(packetinfo):
   """
