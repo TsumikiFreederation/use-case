@@ -67,17 +67,18 @@ def recvack():
         lastchecktime = currenttime # reset clock
         throughput = float(totalbits)/(totaltime*1000000) 
         throughputloss[float(rate)].append(throughput)
-        #log(str(throughput) + "\n")
+        log(str(throughput) + "Mbps\n")
         totalbits = 0
         
     except SocketWouldBlockError:
       currenttime = getruntime()
       timeouttime = currenttime - lastchecktime
       if timeouttime > TIMEOUT:
-        avgthroughput = sum(throughputloss[float(rate)])/len(throughputloss[float(rate)])
-        log(str(rate) + "\t" + str(avgthroughput) + '\t' + str(checklossrate()) + '\n')
+        #avgthroughput = sum(throughputloss[float(rate)])/len(throughputloss[float(rate)])
+        #log(str(rate) + "\t" + str(avgthroughput) + '\t' + str(checklossrate()) + '\n')
+        log("packet loss rate: " + str(checklossrate()) + '\n')
         break
-
+ 
 
 
 ############ define protocol parameters ############   
