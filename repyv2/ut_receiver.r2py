@@ -68,6 +68,10 @@ def recvack():
         lastchecktime = currenttime # reset clock
         throughput = float(totalbits)/(totaltime)/1000000 
         log(str(throughput) + "\n")
+        if moving[0]:
+          log("User is moving" + "\n")
+        else:
+          log("User is not moving" + "\n")
         totalbits = 0
         
     except SocketWouldBlockError:
@@ -151,20 +155,18 @@ def detect():
 
   # Count is used as a marker of how many times you have significantly exceeded the threshold
   count = 0
-  # Moving is the flag indicating whether or not the user is moving
-  moving = False
 
   while(True):
     try:
       ss = filter()
 
-      if (moving):
+      if (moving[0]):
         if ((t - tStop) < ss < (t + tStop)):
           # It takes more "counts" to "stop" moving than to "start" moving, to avoid indicating a
           # stopped user, when theyare only changing acceleration (i.e. if phone in is pants pocket)
           if (count == 5):
             #sensor_data = request_data(sensor_socket, 'ttsSpeak', ["Stop"])
-            moving = False
+            moving = [False]
             count = 0
           else:
             count += 1
@@ -174,7 +176,7 @@ def detect():
         if ((t - tStart) > ss or ss > (t + tStart)):
           if (count == 2):
             #sensor_data = request_data(sensor_socket, 'ttsSpeak', ["Start"])
-            moving = True
+            moving = [True]
             count = 0
           else:
             count += 1
@@ -202,6 +204,9 @@ CYCLE = 1  # time duration to calculate throughput
 (localip, localport) = (getmyip(), 63101)
 listensocket = listenformessage(localip, localport)
 log(getmyip() + '\n')
+
+# moving is the flag indicating whether or not the user is moving
+moving = [False]
 
 createthread(detect)
 recvack()
