@@ -1,0 +1,101 @@
+"""
+<Program Name>
+  ut_receiver.r2py
+
+<Started>
+  Aug 25, 2014
+
+<Author>
+  Yanyan Zhuang
+
+<Purpose>
+  A receiver that observes the ralationship between packet loss and throughput.
+"""
+
+dy_import_module_symbols("outstandingseq.r2py")
+
+
+def deserializepacket(packet):    
+  """
+  Returns the sequence of the packet, and payload length in bits.
+  """
+  seq, rate, payload = packet.split("|")
+  return (seq, rate, len(packet)*8)  # 1 byte = 8 bits
+
+
+def checklossrate():
+  """
+  Calculates loss rate.
+  """
+  numlost = 0
+  for subrange in outstandingseq:
+    if len(subrange) == 1:
+      numlost = numlost + 1
+    else:    
+      left, right = subrange 
+      numlost = numlost + (right - left + 1)
+
+  lossrate = (float(numlost)/NUMPKTS)*100  # use percentage
+  #log(str(numlost) + " packets were lost out of " + 
+  #  str(NUMPKTS) + ". lossrate: " + str(lossrate) + '\n')
+  return lossrate
+  
+
+def recvack():
+
+  totalbits = 0   # record total bytes received
+  totaltime = 0
+  throughput = 0  
+  lastchecktime = getruntime()   # record total time spent over a CYCLE 
+  
+  while True: 
+          
+    try:     
+      # receive packets from sender
+      remoteip, remoteport, message = listensocket.getmessage()
+      # if there is SocketWouldBlockError, the rest will be skipped
+        
+      (seq, rate, payloadlen) = deserializepacket(message)   
+      totalbits = totalbits + payloadlen       
+
+      delfromoutstandingseq(int(seq), outstandingseq)
+      currenttime = getruntime()
+      totaltime = currenttime - lastchecktime
+      
+      if totaltime > CYCLE:
+        # check throughput and movement every CYCLE sec
+        lastchecktime = currenttime # reset clock
+        throughput = float(totalbits)/(totaltime*1000000) 
+        throughputloss[float(rate)].append(throughput)
+        #log(str(throughput) + "\n")
+        totalbits = 0
+        
+    except SocketWouldBlockError:
+      currenttime = getruntime()
+      timeouttime = currenttime - lastchecktime
+      if timeouttime > TIMEOUT:
+        avgthroughput = sum(throughputloss[float(rate)])/len(throughputloss[float(rate)])
+        log(str(rate) + "\t" + str(avgthroughput) + '\t' + str(checklossrate()) + '\n')
+        break
+
+
+
+############ define protocol parameters ############   
+NUMPKTS = 10000 # number of packets to send for each sleeptime
+TIMEOUT = 5 # number of rounds to timeout packets (very rough)
+outstandingseq = [[1, NUMPKTS]]
+
+sleeptime = [0.1/1000, 0.2/1000, 0.3/1000, 0.4/1000, 0.5/1000,
+0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1.0/1000] # hard coded
+
+throughputloss = {}
+for t in sleeptime:
+  throughputloss[float(t)] = []
+
+CYCLE = 1  # time duration to calculate throughput
+
+(localip, localport) = (getmyip(), 63101)
+listensocket = listenformessage(localip, localport)
+log(getmyip() + '\n')
+
+recvack()
