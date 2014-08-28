@@ -28,7 +28,7 @@ G_DEBUG = 0     # output some debug messages if DEBUG == 1
                 # TODO: make this a command line arg
 
 G_CYCLE = 1  # time duration in seconds to calculate throughput
-G_MOVE = [1] # global variable indicating whether the user is moving (1) or not (0)
+G_MOVE = [0] # global variable indicating whether the user is moving (1) or not (0)
 g_recentobservedRTTs = {}  # record the most recent RTTWIN RTTs
 
 for rate in g_sleeptime:  
@@ -42,7 +42,7 @@ g_outstandingseq = []    # record outstanding packets
 g_packetinfo = {}        # dict of (seq: rate, sendtime)
 
 (localip, localport) = (getmyip(), 63100)
-(destip, destport) = ('128.189.202.124', 63101)  # this is phone's IP
+(destip, destport) = ('128.189.206.19', 63101)  # this is phone's IP
 g_routerlistensocket = listenformessage(localip, localport) # router's socket for client's ack
 
 
@@ -127,36 +127,7 @@ def prepsendpacket(sequenceno, payload):
 
   return (packet, timestamp)
 
-
-def ispermanent(seq):
-  """
-  Return if a packet seq # is temporary (0) or not (1). 
-  Static only.
-  """
-  if (seq % WINSIZE) <= PERMSEQTHRESH:
-    return 1
-  return 0
-
-
-def rateadjust(currentbitrate, timestamp, packetinfo, outstandingseq):
-  """
-  Adjust rate every 2RTTs.
-  """
-  if g_recentobservedRTTs[currentbitrate] != []:
-    RTT = estimateRTT(g_recentobservedRTTs[currentbitrate])
-    if g_oldestpktsendtime != [] and (timestamp - g_oldestpktsendtime[0]) > 2*RTT:
-        
-      g_listlock.acquire(True)
-      if G_MOVE[0]: # mobile 
-        checkloss(timestamp, RTT, packetinfo, outstandingseq)
-      else:
-        checkpermloss(timestamp, RTT, packetinfo, outstandingseq)  
-      
-      if packetinfo != {}:
-        _, g_oldestpktsendtime[0] = firstsendtime(packetinfo)
-        
-      g_listlock.release()
-
+    
 
 def recvack(g_routerlistensocket, g_packetinfo, 
                      g_recentobservedRTTs, g_outstandingseq):
