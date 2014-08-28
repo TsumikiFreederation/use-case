@@ -114,12 +114,8 @@ def selectfastrate():
       txtime[t] = rateavgtxtime(g_recentobservedRTTs, t)
 
   if txtime == {}:
-    lessthancurrent = []
-    for t in g_sleeptime:
-      if t < s_currentbitrate[0]:
-        lessthancurrent.append(t)
-    if lessthancurrent != []:
-      s_currentbitrate[0] = max(lessthancurrent)
+    if s_currentbitrate[0] > 1:
+      s_currentbitrate[0] = g_sleeptime[s_currentbitrate[0]-1]
     else:
       s_currentbitrate[0] = g_sleeptime[0]
     #currentbitrate[0] = max(currentbitrate[0]-SLEEPSTEPSIZE, sleeptime[0])
@@ -215,14 +211,10 @@ def rapidsample(now, RTT, numlost, packetinfo):
       m_ratesample[0] = 0    # mark stop sampling
       #log("1.1 sampling, keep same\n")
     else:   # set bitrate to a lower rate
-      largerthancurrent = []
-      for t in g_sleeptime:
-        if t > m_currentbitrate[0]:
-          largerthancurrent.append(t)
-      if largerthancurrent != []:
-        bitrate = min(largerthancurrent)
+      if m_currentbitrate[0] < len(g_sleeptime) - 1:
+        m_currentbitrate[0] = g_sleeptime[m_currentbitrate[0]+1]
       else:
-        bitrate = max(g_sleeptime)
+        m_currentbitrate[0] = g_sleeptime[-1]
       #bitrate = min(currentbitrate[0] + SLEEPSTEPSIZE, 
       #              max(sleeptime))  # 0.1/1000: step size of sleeptime
       #log("1.2 no sampling, lower rate (longer sleep time)\n")
@@ -363,18 +355,17 @@ def sendpackets(sequenceno, packetinfo, outstandingseq):
     sendmessage(destip, destport, str(packet), localip, localport)
     ###############
     
-    sleep(timetosleep)  # sleep for currentbitrate sec
-    """
+    sleep(timetosleep * G_SLEEPINTERVAL)  # sleep for currentbitrate sec
+    
     totalbits = totalbits + len(packet)*8
     currenttime = getruntime()
     totaltime = currenttime - lastchecktime
-    if totaltime > CYCLE:
+    if totaltime > G_CYCLE:
       # check throughput and movement every CYCLE sec
       lastchecktime = currenttime # reset clock
       throughput = float(totalbits)/(totaltime)/1000000 
-      #log("sleep time " + str(currentbitrate[0]) + "sec, send rate " 
-      #    + str(throughput) + " Mbps\n")
-      totalbits = 0  # reset bits"""
+      log("send rate " + str(throughput) + " Mbps\n")
+      totalbits = 0  # reset bits
 
     sequenceno = sequenceno + 1
   

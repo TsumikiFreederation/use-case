@@ -19,8 +19,11 @@ dy_import_module_symbols("outstandingseq.r2py")
 
 # NSDI paper has 8 rates, we have 11
 # TODO: use index 0...9 and multiply by interval (0.0001 sec)
-g_sleeptime = [0, 0.1/1000, 0.2/1000, 0.3/1000, 0.4/1000, 0.5/1000, 
-             0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1.0/1000]  # hard coded
+#g_sleeptime = [0, 0.1/1000, 0.2/1000, 0.3/1000, 0.4/1000, 0.5/1000, 
+#             0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1.0/1000]  # hard coded
+
+g_sleeptime = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+G_SLEEPINTERVAL = 0.0001
   
 G_LENGTH = 1000    # packet length (change for different tx rates)
 G_RTTWIN = 30     # keep the most recent for RTTWIN packets
@@ -44,9 +47,7 @@ g_packetinfo = {}        # dict of (seq: rate, sendtime)
 (localip, localport) = (getmyip(), 63100)
 (destip, destport) = ('128.189.206.19', 63101)  # this is phone's IP
 g_routerlistensocket = listenformessage(localip, localport) # router's socket for client's ack
-
-
-
+  
 
 def deserialize(message):      
   """
