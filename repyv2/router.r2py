@@ -19,55 +19,6 @@
 dy_import_module_symbols("outstandingseq.r2py")
 dy_import_module_symbols("routercommon.r2py")
 
-    
-
-def recvack(routerlistensocket, packetinfo, recentobservedRTTs, outstandingseq):
-  """
-  A closure that receives ack from the receiver, removes it from 
-  packetinfo, and update the recently observed RTT
-  """
-  
-  def ack():      
-    """
-    Inside of the closure
-    """
-
-    while True:      
-      try:
-        # receive ack and movement hint from client
-        remoteip, remoteport, message = routerlistensocket.getmessage()
-        # if there is SocketWouldBlockError, the rest will be skipped
-        
-        now = getruntime()
-        (seq, move) = deserialize(message)  # TODO: use movement info 
-
-        listlock.acquire(True)
-        delfromoutstandingseq(int(seq), outstandingseq)
-        listlock.release()
-      
-        if int(seq) in packetinfo:
-          rate, sendtime = packetinfo[int(seq)]
-          
-          try:  # delete seq upon ack
-            del packetinfo[int(seq)]           
-          except KeyError:
-            raise RangeException("Packet seq not found", 
-              [str(seq) + " is not in packetinfo: " + str(packetinfo)]) 
-
-          newrtt = now - sendtime  # update RTT
-          recentobservedRTTs.append(newrtt)
-          if len(recentobservedRTTs) > RTTWIN: # only keep RTTWIN most recent RTTs
-            recentobservedRTTs.pop(0)
-            
-        #else:
-          #raise RangeException("Packet seq not found", 
-          #    [str(seq) + " is not in packetinfo: " + str(packetinfo)])               
-          #pass
-
-      except SocketWouldBlockError:
-        pass
-
-  return ack
 
 
 def rapidsample(now, RTT, numlost, packetinfo):
@@ -80,55 +31,55 @@ def rapidsample(now, RTT, numlost, packetinfo):
     #failedTime[currentbitrate[0]] = now
     for num in numlost:
       rateofnum, sendtime = packetinfo[num]
-      failedTime[rateofnum] = sendtime + 2*RTT
+      m_failedTime[rateofnum] = sendtime + 2*RTT
      
-    if ratesample[0] == 1:      # if we are sampling a higher rate
-      bitrate = lastbitrate[0]  # set bitrate to this higher rate
-      ratesample[0] = 0    # mark stop sampling
+    if m_ratesample[0] == 1:      # if we are sampling a higher rate
+      bitrate = m_lastbitrate[0]  # set bitrate to this higher rate
+      m_ratesample[0] = 0    # mark stop sampling
       #log("1.1 sampling, keep same\n")
     else:   # set bitrate to a lower rate
       largerthancurrent = []
-      for t in sleeptime:
-        if t > currentbitrate[0]:
+      for t in g_sleeptime:
+        if t > m_currentbitrate[0]:
           largerthancurrent.append(t)
       if largerthancurrent != []:
         bitrate = min(largerthancurrent)
       else:
-        bitrate = max(sleeptime)
+        bitrate = max(g_sleeptime)
       #bitrate = min(currentbitrate[0] + SLEEPSTEPSIZE, 
       #              max(sleeptime))  # 0.1/1000: step size of sleeptime
       #log("1.2 no sampling, lower rate (longer sleep time)\n")
                 
   else: # no loss, speed up
     #log("2. no loss\n")
-    ratesample[0] = 0  # by default, we don't sample higher rates
+    m_ratesample[0] = 0  # by default, we don't sample higher rates
 
     # (1) if the current rate has been successful in the past successTimeout sec
-    if now - pickedTime[currentbitrate[0]] > successTimeout:
+    if now - m_pickedTime[m_currentbitrate[0]] > m_successTimeout:
       nofail = []
-      for tau in sleeptime:
+      for tau in g_sleeptime:
         # (2) find the highest rate that has not failed in the past failureTimeout sec 
-        if now - failedTime[tau] > failureTimeout and tau < currentbitrate[0]:
+        if now - m_failedTime[tau] > m_failureTimeout and tau < m_currentbitrate[0]:
           nofail.append(tau)          
 
       if nofail != []:
         bitrate = min(nofail)      
         #log("2.1 found a higher rate (shorter sleep time), start sampling\n")
-        ratesample[0] = 1   # mark it that we start to sample this higher rate
-        lastbitrate[0] = bitrate  # record this higher bitrate      
+        m_ratesample[0] = 1   # mark it that we start to sample this higher rate
+        m_lastbitrate[0] = bitrate  # record this higher bitrate      
       else: 
-        bitrate = currentbitrate[0]
+        bitrate = m_currentbitrate[0]
         #log("2.2 did not find a better rate. do not sample\n")
         
     else: # the current bit rate has failed in the past 0.005sec
-      bitrate = currentbitrate[0]
+      bitrate = m_currentbitrate[0]
       #log("2.3 did not find a better rate. do not sample\n")  
 
-  if bitrate != currentbitrate[0]:
-    pickedTime[bitrate] = now  # update time when bitrate was picked
+  if bitrate != m_currentbitrate[0]:
+    m_pickedTime[bitrate] = now  # update time when bitrate was picked
     #log("picking new sleep time " + str(bitrate) + " at time " + str(now) + "\n")
       
-  currentbitrate[0] = bitrate
+  m_currentbitrate[0] = bitrate
   #log("current sleep time: " + str(currentbitrate[0]) + '\n\n')
   
   
@@ -165,7 +116,7 @@ def checkloss(now, RTT, packetinfo, outstandingseq):
     removelessthan(outstandingseq, seqlimit)
     
   else:
-    logifdebug(DEBUG, "num lost (packets older than 2RTT): None\n\n")
+    logifdebug(G_DEBUG, "num lost (packets older than 2RTT): None\n\n")
     
       
 
@@ -177,39 +128,43 @@ def sendpackets(sequenceno, packetinfo, outstandingseq):
   totalbits = 0   # record total bytes received
   totaltime = 0
   throughput = 0                 # initial rate is 0
-  payload = "|" + '0'*LENGTH
+  payload = "|" + '0'*G_LENGTH
   lastchecktime = getruntime()   # record total time spent over a CYCLE 
 
   while True:     
     # router sends a bunch of packets to the client
-    packet = str(sequenceno) + payload
-    timestamp = getruntime()  # record (seq, sendtime)
-    packetinfo[sequenceno] = (currentbitrate[0], timestamp)
+    (packet, timestamp) = prepsendpacket(sequenceno, payload)
+
+    if G_MOVE[0]: # mobile 
+      # based on recently observed RTTs, find/check/remove packets older than 2RTT
+      rateadjust(m_currentbitrate[0], timestamp, packetinfo, outstandingseq)
       
-    listlock.acquire(True)
-    addtooutstandingseq(sequenceno, outstandingseq)
-    listlock.release()
-    sendmessage(destip, destport, str(packet), localip, localport)
+    else:  # static
+      if ispermanent(sequenceno) == 0: # temp packets: select temp rate for this seq number
+        if s_temppacketset[0] == 0:
+          # we haven't selected a temp rate for this train of packets
+          selecttemprate(lostseq, currentbitrate[0])
+          temppacketset[0] = 1
+        timetosleep = currentbitrate[1]              
+      else:  # permanent packets
+        temppacketset[0] = 0
+        # based on recently observed RTTs, find/check/remove packets older than 2RTT
+        rateadjust(s_currentbitrate[0], timestamp, packetinfo, outstandingseq)
+        timetosleep = s_currentbitrate[0]
 
-    if oldestpktsendtime == []:
-      oldestpktsendtime.append([])
-      oldestpktsendtime[0] = timestamp
-
-    # based on recently observed RTTs, find/check/remove packets older than 2RTT
-    if recentobservedRTTs != []:
-      RTT = estimateRTT(recentobservedRTTs)
-      #pickedTime[currentbitrate[0]] = timestamp
-      if oldestpktsendtime != [] and (timestamp - oldestpktsendtime[0]) > 2*RTT:
-        listlock.acquire(True)
-        checkloss(timestamp, RTT, packetinfo, outstandingseq)
-        if packetinfo != {}:
-          _, oldestpktsendtime[0] = firstsendtime(packetinfo)
-        listlock.release()
+    # save info for this seq no -- rate and timestamp
+    packetinfo[sequenceno] = (m_currentbitrate[0], timestamp)
+      
+    g_listlock.acquire(True)
+    addtooutstandingseq(sequenceno, g_outstandingseq)
+    g_listlock.release()
     
-    sleep(currentbitrate[0])  # sleep for currentbitrate sec
-    """if sequenceno % 1000 == 0:
-      logifdebug(DEBUG, "sleeping for " + str(currentbitrate[0]) + "sec\n")
-      
+    ###############
+    sendmessage(destip, destport, str(packet), localip, localport)
+    ###############
+    
+    sleep(m_currentbitrate[0])  # sleep for currentbitrate sec
+    """
     totalbits = totalbits + len(packet)*8
     currenttime = getruntime()
     totaltime = currenttime - lastchecktime
@@ -229,52 +184,60 @@ def main():
   The main funciton.
   """
 
-  # router's socket for client's ack
-  routerlistensocket = listenformessage(localip, localport)
-
   # initial variables
-  sequenceno = 1   # sequence number of packets, starting from 1 to WIN
-  outstandingseq = []    # record outstanding packets
-  packetinfo = {}  # dict of (seq: sendtime)
-
-  pickedTime[currentbitrate[0]] = getruntime()
+  sequenceno = 1   # sequence number of packets
   
   # thread that receives ack from the receiver, removes it from 
   # packetinfo, and update the recently observed RTT
-  createthread(recvack(routerlistensocket, packetinfo, 
-                     recentobservedRTTs, outstandingseq))
+  createthread(recvack(g_routerlistensocket, g_packetinfo, 
+                     g_recentobservedRTTs, g_outstandingseq))
 
-  sendpackets(sequenceno, packetinfo, outstandingseq)
+  # thread that resets the failures for each rate every 10sec 
+  #createthread(resetstats())
+  # TODO: this is only needed in static case
+
+  sendpackets(sequenceno, g_packetinfo, g_outstandingseq)
 
 
 
-############ define protocol parameters ############   
-LENGTH = 1000    # packet length (change for different tx rates)
-RTTWIN = 30     # keep the most recent for RTTWIN packets
-DEBUG = 0     # output some debug messages if DEBUG == 1 
-              # TODO: make this a command line arg
+############ define protocol parameters ############  
 
-CYCLE = 1  # time duration in seconds to calculate throughput
-recentobservedRTTs = []  # record the most recent RTTWIN RTTs
-pickedTime = {}   # global variable recording the time when a rate was picked
-failedTime = {}   # global variable recording the time when a rate failed
+######### mobile parameters #########
+m_successTimeout = 1
+m_failureTimeout = 5
+m_pickedTime = {}   # global variable recording the time when a rate was picked
+m_failedTime = {}   # global variable recording the time when a rate failed
 
-for tau in sleeptime:
-  failedTime[tau] = 0
+for tau in g_sleeptime:
+  m_failedTime[tau] = 0
 
 # Python only treats lists, tuples and dicts as global variables.
-currentbitrate = [0]    # global variable that controls sleeping time
-ratesample = [0]        # global variable indicating if we are sampling the rate
-lastbitrate = []        # global variable recording the last rate we picked
-lastbitrate.append(currentbitrate[0])
+m_currentbitrate = [0]    # global variable that controls sleeping time
+m_ratesample = [0]        # global variable indicating if we are sampling the rate
+m_lastbitrate = []        # global variable recording the last rate we picked
+m_lastbitrate.append(m_currentbitrate[0])
+m_pickedTime[m_currentbitrate[0]] = getruntime()
 
-listlock = createlock()  # to sync data structure updates in different threads
-oldestpktsendtime = []   # record the time when the oldest pkt was sent
 
-(localip, localport) = (getmyip(), 63100)
-(destip, destport) = ('206.87.195.106', 63101)  # TODO: this needs to be phone's IP
+######### static parameters #########
+S_RESETWIN = 10    # number of secs to reset packet stats
+S_NUMLOSS = 4      # if NUMLOSS happened consecutively, change rate  
+S_WINSIZE = 1000     # the last 100 in 1000 are temp packets, others are permanent
+S_PERMSEQTHRESH = 900         # if packet seq falls in this range [1, 900), it's permanent
+s_currentbitrate = [0, 0]    # global variable that controls sleeping time 
+                           # (perm rate, temp rate)
+s_lostseq = {}            # record the lost packet sequence for each rate
+s_ratefailed = {}         # record if a rate has failed in the past 10 sec
+s_temppacketset = [0]     # global variable that indicates temp packets rate already set
+
+for rate in g_sleeptime:  
+  # initialize data struct for link stats 
+  s_lostseq[float(rate)] = []
+  s_ratefailed[float(rate)] = [False, None]
+
 log("my IP: " + localip + '\n')
       
 main()
+
 ############ end of main() ############ 
 

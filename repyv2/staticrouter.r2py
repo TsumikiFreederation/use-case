@@ -19,15 +19,6 @@
 dy_import_module_symbols("outstandingseq.r2py")
 dy_import_module_symbols("routercommon.r2py")  
 dy_import_module_symbols('random.r2py') 
-  
-
-def ispermanent(seq):
-  """
-  Return if a packet seq # is temporary (0) or not (1).
-  """
-  if (seq % WINSIZE) <= PERMSEQTHRESH:
-    return 1
-  return 0
     
 
 def existconsecutivelosses(seqlist, n):
@@ -59,7 +50,7 @@ def findnoconsecutivefails(lostseq, oldrate, num):
 
 def selectfastrate():
   """
-  Select the rate with the lowest transmission time.
+  Select the rate with the lowest transmission time (fastest rate).
   """
   txtime = {}
 
@@ -196,51 +187,7 @@ def checkpermloss(sequenceno, now, RTT, packetinfo, outstandingseq):
     # fast rate
     selectfastrate()
 
-
     
-def recvack(routerlistensocket, packetinfo, 
-                     recentobservedRTTs, outstandingseq):
-  """
-  A closure that receives ack from the receiver, removes it from 
-  packetinfo, and update the recently observed RTT
-  """
-  
-  def ack():      
-    """
-    Inside of the closure
-    """
-
-    while True:      
-      try:
-        # receive ack and movement hint from client
-        remoteip, remoteport, message = routerlistensocket.getmessage()
-        # if there is SocketWouldBlockError, the rest will be skipped
-        
-        now = getruntime()
-        (seq, move) = deserialize(message)  # TODO: use movement info 
-
-        listlock.acquire(True)
-        delfromoutstandingseq(int(seq), outstandingseq)
-        listlock.release()
-      
-        if int(seq) in packetinfo:
-          rate, sendtime = packetinfo[int(seq)]
-          
-          try:  # delete seq upon ack
-            del packetinfo[int(seq)]           
-          except KeyError:
-            pass
-
-          newrtt = now - sendtime  # update RTT for each rate
-          recentobservedRTTs[rate].append(newrtt)
-          if len(recentobservedRTTs[rate]) > RTTWIN: # only keep RTTWIN most recent RTTs
-            recentobservedRTTs[rate].pop(0)
-
-      except SocketWouldBlockError:
-        pass
-
-  return ack
-
 
 def sendpackets(sequenceno, packetinfo, outstandingseq):
   """
@@ -294,27 +241,6 @@ def sendpackets(sequenceno, packetinfo, outstandingseq):
     sleep(timetosleep)    
     sequenceno = sequenceno + 1
 
-    
-def resetstats():
-  """
-  A closure that resets packet stats every RESETWIN secs.
-  """
-  def reset():
-    """
-    Inside of the closure
-    """
-    while True:
-      sleep(RESETWIN)
-      currentime = getruntime()
-      #log("resetting stats...\n")
-      for rate in sleeptime:  
-        if ratefailed[rate][1] != None and ratefailed[rate][1] < currentime - RESETWIN:
-          # automatically expires packet info if older than RESETWIN secs
-          ratefailed[rate] = [False, None]
-          # reset observation about RTTs for the rate
-          recentobservedRTTs[rate] = []
-      
-  return reset
 
 
 def main():

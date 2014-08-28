@@ -9,16 +9,44 @@
   Yanyan Zhuang
 
 <Purpose>
-  Common methods called my router code. 
+  Common methods and variables used by router code. 
 """
 
-successTimeout = 1
-failureTimeout = 5
+dy_import_module_symbols("outstandingseq.r2py")
+
+
+############ global protocol parameters ############   
 
 # NSDI paper has 8 rates, we have 11
-sleeptime = [0, 0.1/1000, 0.2/1000, 0.3/1000, 0.4/1000, 0.5/1000, 
+# TODO: use index 0...9 and multiply by interval (0.0001 sec)
+g_sleeptime = [0, 0.1/1000, 0.2/1000, 0.3/1000, 0.4/1000, 0.5/1000, 
              0.6/1000, 0.7/1000, 0.8/1000, 0.9/1000, 1.0/1000]  # hard coded
   
+G_LENGTH = 1000    # packet length (change for different tx rates)
+G_RTTWIN = 30     # keep the most recent for RTTWIN packets
+G_DEBUG = 0     # output some debug messages if DEBUG == 1 
+                # TODO: make this a command line arg
+
+G_CYCLE = 1  # time duration in seconds to calculate throughput
+G_MOVE = [1] # global variable indicating whether the user is moving (1) or not (0)
+g_recentobservedRTTs = {}  # record the most recent RTTWIN RTTs
+
+for rate in g_sleeptime:  
+  # initialize data struct for RTTs
+  g_recentobservedRTTs[float(rate)] = []  
+
+g_listlock = createlock()  # to sync data structure updates in different threads
+g_oldestpktsendtime = []   # record the time when the oldest pkt was sent
+
+g_outstandingseq = []    # record outstanding packets
+g_packetinfo = {}        # dict of (seq: rate, sendtime)
+
+(localip, localport) = (getmyip(), 63100)
+(destip, destport) = ('128.189.202.124', 63101)  # this is phone's IP
+g_routerlistensocket = listenformessage(localip, localport) # router's socket for client's ack
+
+
+
 
 def deserialize(message):      
   """
@@ -29,7 +57,7 @@ def deserialize(message):
   else:
     seq = message
     move = None
-  return (seq, move)
+  return (int(seq), move)
 
 
 def logifdebug(DEBUG, string):
@@ -85,3 +113,113 @@ def firstsendtime(packetinfo):
   minsequence = min(packetinfo)  # find the smallest key
   return packetinfo[minsequence]
 
+
+def prepsendpacket(sequenceno, payload):
+  """
+  Prepare packet header and payload. Initialize oldestpktsendtime.
+  """
+  packet = str(sequenceno) + payload
+  timestamp = getruntime()  # record (seq, sendtime)
+
+  if g_oldestpktsendtime == []:
+    g_oldestpktsendtime.append([])
+    g_oldestpktsendtime[0] = timestamp
+
+  return (packet, timestamp)
+
+
+def ispermanent(seq):
+  """
+  Return if a packet seq # is temporary (0) or not (1). 
+  Static only.
+  """
+  if (seq % WINSIZE) <= PERMSEQTHRESH:
+    return 1
+  return 0
+
+
+def rateadjust(currentbitrate, timestamp, packetinfo, outstandingseq):
+  """
+  Adjust rate every 2RTTs.
+  """
+  if g_recentobservedRTTs[currentbitrate] != []:
+    RTT = estimateRTT(g_recentobservedRTTs[currentbitrate])
+    if g_oldestpktsendtime != [] and (timestamp - g_oldestpktsendtime[0]) > 2*RTT:
+        
+      g_listlock.acquire(True)
+      if G_MOVE[0]: # mobile 
+        checkloss(timestamp, RTT, packetinfo, outstandingseq)
+      else:
+        checkpermloss(timestamp, RTT, packetinfo, outstandingseq)  
+      
+      if packetinfo != {}:
+        _, g_oldestpktsendtime[0] = firstsendtime(packetinfo)
+        
+      g_listlock.release()
+
+
+def recvack(g_routerlistensocket, g_packetinfo, 
+                     g_recentobservedRTTs, g_outstandingseq):
+  """
+  A closure that receives ack from the receiver, removes it from 
+  packetinfo, and update the recently observed RTT
+  """
+  
+  def ack():      
+    """
+    Inside of the closure
+    """
+
+    while True:      
+      try:
+        # receive ack and movement hint from client
+        remoteip, remoteport, message = g_routerlistensocket.getmessage()
+        # if there is SocketWouldBlockError, the rest will be skipped
+        
+        now = getruntime()
+        (seq, move) = deserialize(message)  # TODO: use movement info 
+
+        g_listlock.acquire(True)
+        delfromoutstandingseq(seq, g_outstandingseq)
+        g_listlock.release()
+      
+        if seq in g_packetinfo:
+          rate, sendtime = g_packetinfo[seq]
+          
+          try:  # delete seq upon ack
+            del g_packetinfo[seq]           
+          except KeyError:
+            pass
+
+          newrtt = now - sendtime  # update RTT for each rate
+          g_recentobservedRTTs[rate].append(newrtt)
+          if len(g_recentobservedRTTs[rate]) > G_RTTWIN: # only keep RTTWIN most recent RTTs
+            g_recentobservedRTTs[rate].pop(0)
+
+      except SocketWouldBlockError:
+        pass
+
+  return ack
+
+
+
+def resetstats():
+  """
+  A closure that resets packet stats every RESETWIN secs.
+  """
+  def reset():
+    """
+    Inside of the closure
+    """
+    while True:
+      sleep(RESETWIN)
+      currentime = getruntime()
+      #log("resetting stats...\n")
+      for rate in sleeptime:  
+        if ratefailed[rate][1] != None and ratefailed[rate][1] < currentime - RESETWIN:
+          # automatically expires packet info if older than RESETWIN secs
+          ratefailed[rate] = [False, None]
+          # reset observation about RTTs for the rate
+          recentobservedRTTs[rate] = []
+      
+  return reset
