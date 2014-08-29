@@ -1,0 +1,227 @@
+diff --git a/repyv2/namespace.py b/repyv2/namespace.py
+index ac70102..e8f011b 100644
+--- a/repyv2/namespace.py
++++ b/repyv2/namespace.py
+@@ -264,6 +264,7 @@ class ValueProcessor(BaseProcessor):
+ 
+   def copy(self, val):
+     return _copy(val)
++    #return val
+ 
+ 
+ 
+diff --git a/repyv2/namespace.pyc b/repyv2/namespace.pyc
+index eff36de..e498d2b 100644
+Binary files a/repyv2/namespace.pyc and b/repyv2/namespace.pyc differ
+diff --git a/repyv2/nanny.py b/repyv2/nanny.py
+index 027e8b0..c1bed7d 100644
+--- a/repyv2/nanny.py
++++ b/repyv2/nanny.py
+@@ -530,3 +530,15 @@ def get_resource_information():
+   return (resource_limit_dict, resource_use_dict)
+ 
+ 
++def _always_true(*args):
++  return True  
++
++
++def _do_nothing(*args):
++  pass
++
++tattle_quantity = _do_nothing
++tattle_add_item = _do_nothing
++tattle_remove_item = _do_nothing
++is_item_allowed = _always_true
++#get_resource_limit = _do_nothing
+diff --git a/repyv2/nanny.pyc b/repyv2/nanny.pyc
+index 1e3e7b8..0aeab9c 100644
+Binary files a/repyv2/nanny.pyc and b/repyv2/nanny.pyc differ
+diff --git a/repyv2/nonportable.py b/repyv2/nonportable.py
+index 64af9de..3ef646e 100644
+--- a/repyv2/nonportable.py
++++ b/repyv2/nonportable.py
+@@ -179,6 +179,7 @@ def getruntime():
+    <Returns>
+       The elapsed time as float
+   """
++  return time.time()
+   global starttime, last_uptime, last_timestamp, elapsedtime, granularity, runtimelock
+   
+   # Get the lock
+diff --git a/repyv2/nonportable.pyc b/repyv2/nonportable.pyc
+index 25d3ad2..ed4a50e 100644
+Binary files a/repyv2/nonportable.pyc and b/repyv2/nonportable.pyc differ
+diff --git a/repyv2/repy.py b/repyv2/repy.py
+index 45baaa5..cded3a1 100644
+--- a/repyv2/repy.py
++++ b/repyv2/repy.py
+@@ -57,6 +57,7 @@ checkpythonversion.ensure_python_version_is_supported()
+ import safe
+ import nanny
+ import emulcomm
++import emultimer
+ import idhelper
+ import harshexit
+ import namespace
+@@ -92,6 +93,14 @@ if "fork" in dir(os):
+   os.fork = nonSafe_fork
+ 
+ 
++def check_sendmessage(a,b,c,d,e):
++  assert(type(a) == str)
++  assert(type(b) == int)
++  assert(type(c) == str)
++  assert(type(d) == str)
++  assert(type(e) == int)
++  return emulcomm.sendmessage(a,b,c,d,e)
++  
+ 
+ def get_safe_context(args):
+ 
+@@ -117,9 +126,13 @@ def get_safe_context(args):
+   #usercontext["removefile"] = emulfile.removefile
+   #usercontext["exitall"] = emulmisc.exitall
+   #usercontext["createlock"] = emulmisc.createlock
+-  #usercontext["getruntime"] = emulmisc.getruntime
++  #usercontext["getruntime"] = time.time
++  usercontext["getruntime"] = emulmisc.getruntime
+   #usercontext["randombytes"] = emulmisc.randombytes
+-  #usercontext["createthread"] = emultimer.createthread
++  usercontext["createthread"] = emultimer.createthread
++  #usercontext["sendmessage"] = check_sendmessage
++  usercontext["sendmessage"] = emulcomm.sendmessage
++  usercontext["listenformessage"] = emulcomm.listenformessage
+   #usercontext["sleep"] = emultimer.sleep
+   #usercontext["getthreadname"] = emulmisc.getthreadname
+   usercontext["createvirtualnamespace"] = virtual_namespace.createvirtualnamespace
+@@ -305,7 +318,7 @@ def initialize_nanny(resourcefn):
+   nanny.start_resource_nanny(resourcefn)
+ 
+   # now, let's fire up the cpu / disk / memory monitor...
+-  nonportable.monitor_cpu_disk_and_mem()
++  #nonportable.monitor_cpu_disk_and_mem()
+ 
+   # JAC: I believe this is needed for interface / ip-based restrictions
+   emulcomm.update_ip_cache()
+diff --git a/repyv2/repyportability.py b/repyv2/repyportability.py
+index 69700b8..f523e74 100644
+--- a/repyv2/repyportability.py
++++ b/repyv2/repyportability.py
+@@ -129,8 +129,8 @@ def enable_restrictions():
+   nanny.tattle_remove_item = oldrestrictioncalls['nanny.tattle_remove_item'] 
+   nanny.is_item_allowed = oldrestrictioncalls['nanny.is_item_allowed'] 
+   nanny.get_resource_limit = oldrestrictioncalls['nanny.get_resource_limit']
+-  nanny._resources_allowed_dict = oldrestrictioncalls['nanny._resources_allowed_dict']
+-  nanny._resources_consumed_dict = oldrestrictioncalls['_resources_consumed_dict']
++  #nanny._resources_allowed_dict = oldrestrictioncalls['nanny._resources_allowed_dict']
++  #nanny._resources_consumed_dict = oldrestrictioncalls['nanny._resources_consumed_dict']
+   emulfile.assert_is_allowed_filename = oldrestrictioncalls['emulfile.assert_is_allowed_filename']
+   
+ # from virtual_namespace import VirtualNamespace
+diff --git a/repyv2/restrictions.default b/repyv2/restrictions.default
+index 512b96d..1492396 100644
+--- a/repyv2/restrictions.default
++++ b/repyv2/restrictions.default
+@@ -7,7 +7,7 @@ resource fileread 10000000000
+ resource filesopened 250000
+ resource insockets 500000
+ resource outsockets 500000
+-resource netsend 300000000000
++resource netsend 300000000000    
+ resource netrecv 300000000000
+ resource loopsend 10000000000
+ resource looprecv 10000000000
+diff --git a/repyv2/router.r2py b/repyv2/router.r2py
+index 0d22352..9c1bae2 100644
+--- a/repyv2/router.r2py
++++ b/repyv2/router.r2py
+@@ -12,10 +12,12 @@
+   Router as the data sender, for the use case of rate adaptation.
+ """
+ 
+-from repyportability import *
+-import time
+-getruntime = time.time
++#from repyportability import *
++#import time
++#getruntime = time.time
+ 
++#initialize_restrictions("restrictions.default")
++#enable_restrictions()
+ 
+ def deserialize(message):      
+   """
+@@ -196,7 +198,7 @@ def main():
+   """
+ 
+   (localip, localport) = (getmyip(), 63100)
+-  (destip, destport) = ('206.87.192.231', 63101)  # TODO: this needs to be phone's IP
++  (destip, destport) = ('206.12.54.53', 63101)  # TODO: this needs to be phone's IP
+   log("my IP: " + localip + '\n')
+ 
+   # router's socket for client's ack
+@@ -205,7 +207,6 @@ def main():
+   sequenceno = 1   # sequence number of packets, starting from 1 to WIN
+   
+   # initial variables
+-  starttime = getruntime()
+   packetsequence = {}
+   recentobservedRTTs = []  # initially set to a large value
+   totalbits = 0   # record total bytes received
+@@ -231,13 +232,7 @@ def main():
+       # router sends a bunch of packets to the client
+       packet = str(sequenceno) + "|" + '0'*LENGTH 
+       packetsequence[sequenceno] = getruntime()  # record (seq, sendtime)
+-      sendstarts = packetsequence[sequenceno]
+-      #logifdebug(DEBUG, "sending " + str(sequenceno) + "th packet at " + str(packetsequence[sequenceno]))
+-      # sending sequence: " + str(packetsequence))
+-
+       sendmessage(destip, destport, str(packet), localip, localport)
+-      sendends = getruntime()
+-      sendtotal = sendtotal + sendends - sendstarts
+     
+       totalbits = totalbits + len(packet)*8
+       currenttime = getruntime()
+@@ -255,7 +250,6 @@ def main():
+ 
+     logifdebug(1, "it took " + str(endtime-starttime) + " to send " + str(WIN)
+              + " pkts of " + str(LENGTH) + "bytes")
+-    logifdebug(1, "time spent sendmessage: " + str(sendtotal))
+     sendtotal = 0
+ 
+     if recentobservedRTTs != []:
+@@ -270,15 +264,15 @@ def main():
+     sequenceno = 1
+ 
+ 
+-if __name__ == '__main__':
++#if __name__ == '__main__':
+     
+   ############ define protocol parameters ############   
+-  LENGTH = 1000    # packet length (change for different tx rates)
+-  RTTWIN = 10      # check packet loss every RTTWIN ack
+-  WIN = 1000        # window size to check for packet loss
++LENGTH = 1000    # packet length (change for different tx rates)
++RTTWIN = 10      # check packet loss every RTTWIN ack
++WIN = 100        # window size to check for packet loss
+ 
+-  DEBUG = 0     # output some debug messages if DEBUG == 1 
++DEBUG = 0     # output some debug messages if DEBUG == 1 
+               # TODO: make this a command line arg
+-  CYCLE = 1  # time duration to calculate throughput
++CYCLE = 1  # time duration to calculate throughput
+ 
+-  main()
++main()
+diff --git a/router-client/pyrouter.py b/router-client/pyrouter.py
+index 2039ff8..7258d7e 100644
+--- a/router-client/pyrouter.py
++++ b/router-client/pyrouter.py
+@@ -22,6 +22,7 @@ def recvack(sock):
+     #print "received " + seq + "th ack"
+   
+ 
++ 
+ ############ define protocol parameters ############ 
+ LENGTH = 1000    # packet length (change for different tx rates)
+ RTTWIN = 10      # check packet loss every RTTWIN ack
