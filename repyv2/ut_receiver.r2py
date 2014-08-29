@@ -19,8 +19,8 @@ def deserializepacket(packet):
   """
   Returns the sequence of the packet, and payload length in bits.
   """
-  seq, payload = packet.split("|")
-  return (seq, len(packet)*8)  # 1 byte = 8 bits
+  seq, rate, payload = packet.split("|")
+  return (seq, rate, len(packet)*8)  # 1 byte = 8 bits
 
 
 def checklossrate():
@@ -55,7 +55,7 @@ def recvack():
       remoteip, remoteport, message = listensocket.getmessage()
       # if there is SocketWouldBlockError, the rest will be skipped
         
-      (seq, payloadlen) = deserializepacket(message)   
+      (seq, rate, payloadlen) = deserializepacket(message) 
       totalbits = totalbits + payloadlen       
       #log(seq + '\n')
 
