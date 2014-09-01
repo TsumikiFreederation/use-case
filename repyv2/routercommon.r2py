@@ -29,7 +29,7 @@ G_DEBUG = 0     # output some debug messages if DEBUG == 1
 G_CYCLE = 1  # time duration in seconds to calculate throughput
 G_MOVE = [0] # global variable indicating whether the user is moving (1) or static (0)
              # update every packet
-G_ALGMOBILE = [0] # global variable indicating whether to use mobile (1) or static alg (0)
+G_ALGMOBILE = [1] # global variable indicating whether to use mobile (1) or static alg (0)
                   # update every sec 
 G_PREVALGMOBILE = [0] # do cleanup if it's different from G_ALGMOBILE
 
@@ -45,10 +45,6 @@ g_oldestpktsendtime = []   # record the time when the oldest pkt was sent
 
 g_outstandingseq = []    # record outstanding packets
 g_packetinfo = {}        # dict of (seq: rate, sendtime)
-
-(localip, localport) = (getmyip(), 63100)
-(destip, destport) = ('206.87.193.68', 63101)  # this is phone's IP
-g_routerlistensocket = listenformessage(localip, localport) # router's socket for client's ack
 
 
 def cleanup():

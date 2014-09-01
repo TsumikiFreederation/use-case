@@ -54,10 +54,15 @@ DEBUG = 0  # output some debug messages if DEBUG == 1
            # TODO: make this a command line arg
 CYCLE = 1  # time duration to calculate throughput
 
-(localip, localport) = (getmyip(), 63101)
-(destip, destport) = ('128.189.202.188', 63100) # TODO: this needs to be router's IP
-
-log(getmyip() + '\n')
+if len(callargs) == 0:
+  log("\nPlease specify router's IP.\n")
+  exitall()
+else:
+  if len(callargs) == 1:
+    (localip, localport) = (getmyip(), 63101)
+    (destip, destport) = (callargs[0], 63100)  # this is phone's IP
+    log("my IP: " + localip + '\n')
+    
 
 phonelistensocket = listenformessage(localip, localport)
 
@@ -84,7 +89,7 @@ while True:
       # check throughput and movement every CYCLE sec
       lastchecktime = currenttime # reset clock
       throughput = float(totalbits)/(totaltime)/1000000 
-      log(str(currenttime) + '\t' + str(throughput) + "\n")
+      log(str(throughput) + "\n")
       totalbits = 0  # reset bits
       move = getmovement()
       ack = seq + "|" + str(move)

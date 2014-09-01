@@ -403,6 +403,12 @@ def sendpackets(sequenceno, g_packetinfo, g_outstandingseq):
     totaltime = currenttime - lastchecktime
     if totaltime > G_CYCLE:
       # check throughput and movement every CYCLE sec
+      if G_MOVE[0]:
+        G_ALGMOBILE[0] = 1
+      else:
+        G_ALGMOBILE[0] = 0
+      G_PREVALGMOBILE[0] = G_ALGMOBILE[0]
+      
       lastchecktime = currenttime # reset clock
       throughput = float(totalbits)/(totaltime)/1000000 
       log("send rate " + str(throughput) + " Mbps\n")
@@ -415,7 +421,7 @@ def main():
   """
   The main funciton.
   """
-
+        
   sequenceno = 1   # sequence number of packets
   
   # thread that receives ack from the receiver, removes it from 
@@ -433,7 +439,7 @@ def main():
 
 ######### mobile parameters #########
 m_successTimeout = 0.5
-m_failureTimeout = 1
+m_failureTimeout = 0.5
 m_pickedTime = {}   # global variable recording the time when a rate was picked
 m_failedTime = {}   # global variable recording the time when a rate failed
 
@@ -464,7 +470,16 @@ for rate in g_sleeptime:
   s_lostseq[float(rate)] = []
   s_ratefailed[float(rate)] = [False, None]
 
-log("my IP: " + localip + '\n')
+
+if len(callargs) == 0:
+  log("\nPlease specify phone's IP.\n")
+  exitall()
+else:
+  if len(callargs) == 1:
+    (localip, localport) = (getmyip(), 63100)
+    (destip, destport) = (callargs[0], 63101)  # this is phone's IP
+    g_routerlistensocket = listenformessage(localip, localport) # router's socket for client's ack
+    log("my IP: " + localip + '\n')
       
 main()
 
