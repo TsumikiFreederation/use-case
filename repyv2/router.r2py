@@ -355,29 +355,32 @@ def sendpackets(sequenceno, g_packetinfo, g_outstandingseq):
     (packet, timestamp) = prepsendpacket(sequenceno, payload)
     #log("sending " + str(sequenceno) + "th at " + str(timestamp) + '\n')
 
-    if G_MOVE[0]: # mobile 
+    if G_MOVE[1]: # mobile 
       # clear all data structures once detecting a movement change
-      #cleanup()
+      if G_MOVE[0] == 0: # last packet indicated no movement
+        cleanup()
         
       # based on recently observed RTTs, find/check/remove packets older than 2RTT
       rateadjust(m_currentbitrate[0], timestamp, g_packetinfo, g_outstandingseq)
       timetosleep = m_currentbitrate[0]
       
     else:  # static
-      # clear all data structures once detecting a movement change
-      #cleanup()
+      if G_MOVE[1] == 0:
+        # clear all data structures once detecting a movement change
+        if G_MOVE[0] == 1: # last packet indicated movement
+          cleanup()
 
-      if ispermanent(sequenceno) == 0: # temp packets: select temp rate for this seq number
-        if s_temppacketset[0] == 0:
-          # we haven't selected a temp rate for this train of packets
-          selecttemprate(s_lostseq, s_currentbitrate[0])
-          s_temppacketset[0] = 1
-        timetosleep = s_currentbitrate[1]              
-      else:  # permanent packets
-        s_temppacketset[0] = 0
-        # based on recently observed RTTs, find/check/remove packets older than 2RTT
-        rateadjust(s_currentbitrate[0], timestamp, g_packetinfo, g_outstandingseq)
-        timetosleep = s_currentbitrate[0]
+        if ispermanent(sequenceno) == 0: # temp packets: select temp rate for this seq number
+          if s_temppacketset[0] == 0:
+            # we haven't selected a temp rate for this train of packets
+            selecttemprate(s_lostseq, s_currentbitrate[0])
+            s_temppacketset[0] = 1
+          timetosleep = s_currentbitrate[1]              
+        else:  # permanent packets
+          s_temppacketset[0] = 0
+          # based on recently observed RTTs, find/check/remove packets older than 2RTT
+          rateadjust(s_currentbitrate[0], timestamp, g_packetinfo, g_outstandingseq)
+          timetosleep = s_currentbitrate[0]
 
     #log("selected rate " + str(timetosleep * G_SLEEPINTERVAL) +  
     #    " for " + str(sequenceno) + '\n')
@@ -403,11 +406,6 @@ def sendpackets(sequenceno, g_packetinfo, g_outstandingseq):
     totaltime = currenttime - lastchecktime
     if totaltime > G_CYCLE:
       # check throughput and movement every CYCLE sec
-      if G_MOVE[0]:
-        G_ALGMOBILE[0] = 1
-      else:
-        G_ALGMOBILE[0] = 0
-      G_PREVALGMOBILE[0] = G_ALGMOBILE[0]
       
       lastchecktime = currenttime # reset clock
       throughput = float(totalbits)/(totaltime)/1000000 

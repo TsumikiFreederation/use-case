@@ -27,11 +27,14 @@ G_DEBUG = 0     # output some debug messages if DEBUG == 1
                 # TODO: make this a command line arg
 
 G_CYCLE = 1  # time duration in seconds to calculate throughput
-G_MOVE = [0] # global variable indicating whether the user is moving (1) or static (0)
-             # update every packet
-G_ALGMOBILE = [1] # global variable indicating whether to use mobile (1) or static alg (0)
+G_MOVE = [0, 0] # global variable indicating whether the user is moving (1) or static (0)
+                # G_MOVE[0] is the movement hint from last packet, G_MOVE[1] is current packet
+                # update every packet
+G_MOVE_LEN = 2  # length of vars to keep movement info
+
+#G_ALGMOBILE = [1] # global variable indicating whether to use mobile (1) or static alg (0)
                   # update every sec 
-G_PREVALGMOBILE = [0] # do cleanup if it's different from G_ALGMOBILE
+#G_PREVALGMOBILE = [0] # do cleanup if it's different from G_ALGMOBILE
 
 # initialize data struct for RTTs
 s_recentobservedRTTs = {}  # record the most recent RTTWIN RTTs
@@ -164,7 +167,10 @@ def recvack(g_routerlistensocket, g_packetinfo, g_outstandingseq):
         
         now = getruntime()
         (seq, move) = deserialize(message)  
-        #G_MOVE[0] = int(move)  # update for each received packet
+        G_MOVE.append(int(move))
+        if len(G_MOVE) > G_MOVE_LEN: # only keep RTTWIN most recent RTTs
+          G_MOVE.pop(0)
+        log("G_MOVE: " + str(G_MOVE) + '\n')
 
         g_listlock.acquire(True)
         delfromoutstandingseq(seq, g_outstandingseq)
@@ -185,16 +191,17 @@ def recvack(g_routerlistensocket, g_packetinfo, g_outstandingseq):
           #log("received " + str(seq) + "th at " + str(now) + " sent at " 
           #    + str(sendtime) + " with rate " + str(rate) + " with RTT " + str(newrtt)  + 'sec\n')
 
-          if G_MOVE[0]: # mobile
+          if G_MOVE[1]: # mobile
             m_recentobservedRTTs.append(newrtt)
             if len(m_recentobservedRTTs) > G_RTTWIN: # only keep RTTWIN most recent RTTs
               m_recentobservedRTTs.pop(0)
           else: # static
-            #log("movement indicator: " + str(G_MOVE[0]) + '\n')
-            s_recentobservedRTTs[rate].append(newrtt)
-            if len(s_recentobservedRTTs[rate]) > G_RTTWIN: # only keep RTTWIN most recent RTTs
-              s_recentobservedRTTs[rate].pop(0)
-            #log("RTTs: " + str(s_recentobservedRTTs) + '\n\n')
+            if G_MOVE[1] == 0:
+              #log("movement indicator: " + str(G_MOVE[0]) + '\n')
+              s_recentobservedRTTs[rate].append(newrtt)
+              if len(s_recentobservedRTTs[rate]) > G_RTTWIN: # only keep RTTWIN most recent RTTs
+                s_recentobservedRTTs[rate].pop(0)
+              #log("RTTs: " + str(s_recentobservedRTTs) + '\n\n')
 
       except SocketWouldBlockError:
         pass

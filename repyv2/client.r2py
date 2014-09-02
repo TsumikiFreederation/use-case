@@ -23,17 +23,6 @@ def deserializepacket(packet):
   return (seq, len(packet)*8)  # 1 byte = 8 bits
 
 
-def getmovement():    
-  """
-  Returns the user holding this phone is moving or not.
-  """    
-  # TODO: replace this with Thomas's code
-  flip = randomfloat()
-  if flip > 0.5:
-    amimove = 1
-  else: 
-    amimove = 0
-  return amimove
 
 
 def logifdebug(DEBUG, string):
@@ -129,35 +118,28 @@ def detect(threshold):
         sensorvalue = sensorfilter()
 
         if moving[0]:
-          if (threshold - tStop) < sensorvalue < (threshold + tStop):
+          if (threshold - tStop) < sensorvalue and sensorvalue < (threshold + tStop):
             # It takes more "counts" to "stop" moving than to "start" moving, to avoid indicating a
             # stopped user, when theyare only changing acceleration (i.e. if phone in is pants pocket)
             if count == 5:
-              moving[0] = False
-              if moving[0] != lastmove[0]:
-                log("stop moving\n")
-              else:
-                log("keep static\n")
+              moving[0] = 0
+              log("stop moving\n")
               count = 0
             else:
               count += 1
           else:
             count = 0
-        else:
+        else: 
           if (threshold - tStart) > sensorvalue or sensorvalue > (threshold + tStart):
             if count == 2:
-              moving[0] = True
-              if moving[0] != lastmove[0]:
-                log("start moving\n")
-              else:
-                log("keep moving\n") 
+              moving[0] = 1
+              log("start moving\n")
               count = 0
             else:
               count += 1
           else:
             count = 0
 
-        lastmove[0] = moving[0]
         sleep(0.1)
 
       except Exception as e:
@@ -203,7 +185,7 @@ def main():
         log(str(throughput) + "\n")
         totalbits = 0  # reset bits
 
-      ack = seq + "|" + str(G_MOVE[0])
+      ack = seq + "|" + str(moving[0])
       # send back ack!     
       sendmessage(destip, destport, ack, localip, localport)
 
@@ -213,10 +195,6 @@ def main():
 DEBUG = 0  # output some debug messages if DEBUG == 1
            # TODO: make this a command line arg
 CYCLE = 1  # time duration to calculate throughput
-G_MOVE = [0] # global variable indicating whether the user is: 
-             # (0) from not moving to moving (1) keep moving 
-             # (2) from moving to not moving (3) not moving 
-             # update every packet
 
 TRAINING = 150 
 EFFECTIVE_TRAINING = 50
@@ -234,9 +212,8 @@ port = get_connectionport()
 sensor_socket = getconnection(port)
 request_data(sensor_socket, 'startSensingTimed', [1, 50])
 
-moving = [False]
-lastmove = [False]
-accel = [0,0,0]
+moving = [0]  # global variable indicating whether the user is moving or not
+accel = [0,0,0] 
 threshold = training()
 
 createthread(detect(threshold))
