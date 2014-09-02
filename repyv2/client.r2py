@@ -12,9 +12,7 @@
   A smartphone acts as a client that reports to router its movement.
 """
 
-# need this library for random number generation
-# will be removed after adding Thomas's code
-dy_import_module_symbols('random.r2py')
+dy_import_module_symbols("sensorlib.r2py")
 
 
 def deserializepacket(packet):    
@@ -46,14 +44,183 @@ def logifdebug(DEBUG, string):
     log(string + '\n')
   else: 
     return 
+
+
   
+def sensorfilter():
+  """
+  Returns the square root of the sum of squares of the 3 acceleration directions (X,Y,Z), 
+  which have been collected by the phone and filtered as per:
+  http://seattlesensor.wordpress.com/2013/01/01/accelerometer-sensor-data-processing/
+  """
+  a = 0.1
+  sensor_data = [None, None, None]
+
+  # Ensure accel. data properly collected and assigned to sensor_data
+  while(sensor_data[0] == None or sensor_data[1] == None  or sensor_data[2] == None):
+    sensor_data = request_data(sensor_socket, 'sensorsReadAccelerometer', [])
+
+  Xi, Yi, Zi =  sensor_data
+  X0, Y0, Z0 =  accel
+
+  # Apply high-pass filter
+  Xh = Xi - (a*X0 + (1-a)*Xi)
+  Yh = Yi - (a*Y0 + (1-a)*Yi)
+  Zh = Zi - (a*Z0 + (1-a)*Zi)
+
+  # Apply low-pass filter
+  Xl = Xh * a + X0 * (1 - a)
+  Yl = Yh * a + Y0 * (1 - a)
+  Zl = Zh * a + Z0 * (1 - a)
+
+  # Return square root of sum of squares
+  return (Xl ** 2 + Yl ** 2 + Zl ** 2) ** 0.5
+
+
+def training():
+  """
+  Finding a threshold for movement detection.  
+  """
+  threshold = 0
+
+  # Start by collecting accel. data for 100 loops, but only use data after 
+  # first 50 loops, when the filtered accel. data has plateaued.
+
+  # Phone should be motionless during this time
+  for i in range (1, TRAINING):
+    try:
+      sensorvalue = sensorfilter()
+
+      if (i > TRAINING-EFFECTIVE_TRAINING-1):
+        threshold += sensorvalue
+
+      sleep(0.05)
+
+    except Exception as e:
+      log(str(e), '\n')
+      sensor_socket.close()
+      raise
+
+  # Average collected data to use as threshold
+  threshold = threshold/EFFECTIVE_TRAINING
+  #sensor_data = request_data(sensor_socket, 'ttsSpeak', ['Threshold set to ' + str(round(t, 3))])
+  return threshold
+
+
+def detect(threshold):
+  """
+  Detect movement based on threshold.
+  """
+
+  def move():
+    """
+    Inside of the closure
+    """
+  
+    # Thresholds for indicating start/stop of movements
+    tStop = threshold * 0.065
+    tStart = threshold * 0.075
+
+    # Count is used as a marker of how many times you have significantly exceeded the threshold
+    count = 0
+
+    while(True):
+      try:
+        sensorvalue = sensorfilter()
+
+        if moving[0]:
+          if (threshold - tStop) < sensorvalue < (threshold + tStop):
+            # It takes more "counts" to "stop" moving than to "start" moving, to avoid indicating a
+            # stopped user, when theyare only changing acceleration (i.e. if phone in is pants pocket)
+            if count == 5:
+              moving[0] = False
+              if moving[0] != lastmove[0]:
+                log("stop moving\n")
+              else:
+                log("keep static\n")
+              count = 0
+            else:
+              count += 1
+          else:
+            count = 0
+        else:
+          if (threshold - tStart) > sensorvalue or sensorvalue > (threshold + tStart):
+            if count == 2:
+              moving[0] = True
+              if moving[0] != lastmove[0]:
+                log("start moving\n")
+              else:
+                log("keep moving\n") 
+              count = 0
+            else:
+              count += 1
+          else:
+            count = 0
+
+        lastmove[0] = moving[0]
+        sleep(0.1)
+
+      except Exception as e:
+        log(str(e), '\n')
+        sensor_socket.close()
+        raise
+
+    request_data(sensor_socket, 'stopSensing', [])
+    sensor_socket.close()
+
+  return move
+
+
+def main():
+  """
+  The main funciton.
+  """
+  phonelistensocket = listenformessage(localip, localport)
+
+  ack = ''       # string for sending back ack
+  packet = ''    # string for received packet on phonelistensocket
+  totalbits = 0   # record total bits received over a CYCLE 
+  lastchecktime = getruntime()   # record total time spent over a CYCLE 
+
+  while True: 
+    try:
+      remoteip, remoteport, packet = phonelistensocket.getmessage()      
+    except SocketWouldBlockError:
+      pass
+
+    if packet != '':  # when we received real data
+      (seq, payloadlen) = deserializepacket(packet)
+      logifdebug(DEBUG, "received " + seq + "th packet.\n")
+      totalbits = totalbits + payloadlen  
+      packet = '' 
+      currenttime = getruntime()
+      totaltime = currenttime - lastchecktime
+
+      if totaltime > CYCLE:
+        # check throughput and movement every CYCLE sec
+        lastchecktime = currenttime # reset clock
+        throughput = float(totalbits)/(totaltime)/1000000 
+        log(str(throughput) + "\n")
+        totalbits = 0  # reset bits
+
+      ack = seq + "|" + str(G_MOVE[0])
+      # send back ack!     
+      sendmessage(destip, destport, ack, localip, localport)
+
 
 ############ main program ############
 
 DEBUG = 0  # output some debug messages if DEBUG == 1
            # TODO: make this a command line arg
 CYCLE = 1  # time duration to calculate throughput
+G_MOVE = [0] # global variable indicating whether the user is: 
+             # (0) from not moving to moving (1) keep moving 
+             # (2) from moving to not moving (3) not moving 
+             # update every packet
 
+TRAINING = 150 
+EFFECTIVE_TRAINING = 50
+             
 if len(callargs) == 0:
   log("\nPlease specify router's IP.\n")
   exitall()
@@ -62,39 +229,17 @@ else:
     (localip, localport) = (getmyip(), 63101)
     (destip, destport) = (callargs[0], 63100)  # this is phone's IP
     log("my IP: " + localip + '\n')
-    
 
-phonelistensocket = listenformessage(localip, localport)
+port = get_connectionport()
+sensor_socket = getconnection(port)
+request_data(sensor_socket, 'startSensingTimed', [1, 50])
 
-ack = ''       # string for sending back ack
-packet = ''    # string for received packet on phonelistensocket
-totalbits = 0   # record total bits received over a CYCLE 
-lastchecktime = getruntime()   # record total time spent over a CYCLE 
+moving = [False]
+lastmove = [False]
+accel = [0,0,0]
+threshold = training()
 
-while True: 
-  try:
-    remoteip, remoteport, packet = phonelistensocket.getmessage()      
-  except SocketWouldBlockError:
-    pass
+createthread(detect(threshold))
 
-  if packet != '':  # when we received real data
-    (seq, payloadlen) = deserializepacket(packet)
-    logifdebug(DEBUG, "received " + seq + "th packet.\n")
-    totalbits = totalbits + payloadlen  
-    packet = '' 
-    currenttime = getruntime()
-    totaltime = currenttime - lastchecktime
+main()
 
-    if totaltime > CYCLE:
-      # check throughput and movement every CYCLE sec
-      lastchecktime = currenttime # reset clock
-      throughput = float(totalbits)/(totaltime)/1000000 
-      log(str(throughput) + "\n")
-      totalbits = 0  # reset bits
-      move = getmovement()
-      ack = seq + "|" + str(move)
-    else:
-      ack = seq
-
-    # send back ack!     
-    sendmessage(destip, destport, ack, localip, localport)
