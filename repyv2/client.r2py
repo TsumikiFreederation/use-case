@@ -123,7 +123,7 @@ def detect(threshold):
             # stopped user, when theyare only changing acceleration (i.e. if phone in is pants pocket)
             if count == 5:
               moving[0] = 0
-              log("stop moving\n")
+              #log("stop moving\n")
               count = 0
             else:
               count += 1
@@ -133,7 +133,7 @@ def detect(threshold):
           if (threshold - tStart) > sensorvalue or sensorvalue > (threshold + tStart):
             if count == 2:
               moving[0] = 1
-              log("start moving\n")
+              #log("start moving\n")
               count = 0
             else:
               count += 1

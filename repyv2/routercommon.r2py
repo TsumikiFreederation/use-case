@@ -167,10 +167,12 @@ def recvack(g_routerlistensocket, g_packetinfo, g_outstandingseq):
         
         now = getruntime()
         (seq, move) = deserialize(message)  
-        G_MOVE.append(int(move))
+        G_MOVE.append(0)
+        G_MOVE.append(0)
+        #G_MOVE.append(int(move))
         if len(G_MOVE) > G_MOVE_LEN: # only keep RTTWIN most recent RTTs
           G_MOVE.pop(0)
-        log("G_MOVE: " + str(G_MOVE) + '\n')
+        #log("G_MOVE: " + str(G_MOVE) + '\n')
 
         g_listlock.acquire(True)
         delfromoutstandingseq(seq, g_outstandingseq)

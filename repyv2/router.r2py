@@ -359,7 +359,7 @@ def sendpackets(sequenceno, g_packetinfo, g_outstandingseq):
       # clear all data structures once detecting a movement change
       if G_MOVE[0] == 0: # last packet indicated no movement
         cleanup()
-        
+
       # based on recently observed RTTs, find/check/remove packets older than 2RTT
       rateadjust(m_currentbitrate[0], timestamp, g_packetinfo, g_outstandingseq)
       timetosleep = m_currentbitrate[0]
@@ -370,6 +370,7 @@ def sendpackets(sequenceno, g_packetinfo, g_outstandingseq):
         if G_MOVE[0] == 1: # last packet indicated movement
           cleanup()
 
+        #log("calling static\n")
         if ispermanent(sequenceno) == 0: # temp packets: select temp rate for this seq number
           if s_temppacketset[0] == 0:
             # we haven't selected a temp rate for this train of packets
@@ -436,8 +437,8 @@ def main():
 ############ define protocol parameters ############  
 
 ######### mobile parameters #########
-m_successTimeout = 0.5
-m_failureTimeout = 0.5
+m_successTimeout = 0.03
+m_failureTimeout = 0.05
 m_pickedTime = {}   # global variable recording the time when a rate was picked
 m_failedTime = {}   # global variable recording the time when a rate failed
 
