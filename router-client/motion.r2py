@@ -37,7 +37,7 @@ def filter():
     Zl = Zh * a + Z0 * (1 - a)
 
     # Return square root of sum of squares
-    return (Xl ** 2 + Yl ** 2 + Zl ** 2) ** 0.5
+    return [(Xl ** 2 + Yl ** 2 + Zl ** 2) ** 0.5, Xl, Yl, Zl]
 
 
 dy_import_module_symbols("sensorlib.r2py")
@@ -54,8 +54,9 @@ t = 0
 # Phone should be motionless during this time
 for i in range (1, 150):
     try:
-        ss = filter()
-
+        [ss, Xl, Yl, Zl] = filter()
+        accel = [Xl, Yl, Zl]
+        
         if (i > 99):
             t += ss
 
@@ -81,7 +82,8 @@ moving = False
 
 while(True):
     try:
-        ss = filter()
+        [ss, Xl, Yl, Zl] = filter()
+        accel = [Xl, Yl, Zl]
 
         if (moving):
             if ((t - tStop) < ss < (t + tStop)):
