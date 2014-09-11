@@ -1,0 +1,179 @@
+"""
+Detect move/not-move changes and sends a corresponding notification
+string to two hardcoded UDP ip:port static hosts.
+"""
+
+dy_import_module_symbols("sensorlib.r2py")
+
+
+# connection constants:
+DESTIP1 = 142.103.6.5
+DESTPORT1 = 8080
+
+DESTIP2 = 142.103.6.4
+DESTPORT2 = 8080
+
+LOCALPORT = 63101
+
+def sensorfilter():
+  """
+  Returns the square root of the sum of squares of the 3 acceleration directions (X,Y,Z), 
+  which have been collected by the phone and filtered as per:
+  http://seattlesensor.wordpress.com/2013/01/01/accelerometer-sensor-data-processing/
+  """
+  a = 0.1
+  sensor_data = [None, None, None]
+
+  # Ensure accel. data properly collected and assigned to sensor_data
+  while(sensor_data[0] == None or sensor_data[1] == None  or sensor_data[2] == None):
+    sensor_data = request_data(sensor_socket, 'sensorsReadAccelerometer', [])
+
+  Xi, Yi, Zi =  sensor_data
+  X0, Y0, Z0 =  accel
+
+  # Apply high-pass filter
+  Xh = Xi - (a*X0 + (1-a)*Xi)
+  Yh = Yi - (a*Y0 + (1-a)*Yi)
+  Zh = Zi - (a*Z0 + (1-a)*Zi)
+
+  # Apply low-pass filter
+  Xl = Xh * a + X0 * (1 - a)
+  Yl = Yh * a + Y0 * (1 - a)
+  Zl = Zh * a + Z0 * (1 - a)
+
+  # Return square root of sum of squares
+  return (Xl ** 2 + Yl ** 2 + Zl ** 2) ** 0.5
+
+
+def training():
+  """
+  Finding a threshold for movement detection.  
+  """
+  threshold = 0
+
+  # Start by collecting accel. data for 100 loops, but only use data after 
+  # first 50 loops, when the filtered accel. data has plateaued.
+
+  # Phone should be motionless during this time
+  for i in range (1, TRAINING):
+    try:
+      sensorvalue = sensorfilter()
+
+      if (i > TRAINING-EFFECTIVE_TRAINING-1):
+        threshold += sensorvalue
+
+      sleep(0.05)
+
+    except Exception as e:
+      log(str(e), '\n')
+      sensor_socket.close()
+      raise
+
+  # Average collected data to use as threshold
+  threshold = threshold/EFFECTIVE_TRAINING
+  #sensor_data = request_data(sensor_socket, 'ttsSpeak', ['Threshold set to ' + str(round(t, 3))])
+  return threshold
+
+
+def detect(threshold):
+  """
+  Detect movement based on threshold.
+  """
+
+  def move():
+    """
+    Inside of the closure
+    """
+  
+    # Thresholds for indicating start/stop of movements
+    tStop = threshold * 0.065
+    tStart = threshold * 0.075
+
+    # Count is used as a marker of how many times you have significantly exceeded the threshold
+    count = 0
+
+    while(True):
+      try:
+        sensorvalue = sensorfilter()
+
+        if moving[0]:
+          if (threshold - tStop) < sensorvalue and sensorvalue < (threshold + tStop):
+            # It takes more "counts" to "stop" moving than to "start" moving, to avoid indicating a
+            # stopped user, when theyare only changing acceleration (i.e. if phone in is pants pocket)
+            if count == 5:
+              moving[0] = 0
+              #log("stop moving\n")
+              count = 0
+            else:
+              count += 1
+          else:
+            count = 0
+        else: 
+          if (threshold - tStart) > sensorvalue or sensorvalue > (threshold + tStart):
+            if count == 2:
+              moving[0] = 1
+              #log("start moving\n")
+              count = 0
+            else:
+              count += 1
+          else:
+            count = 0
+
+        sleep(0.1)
+
+      except Exception as e:
+        log(str(e), '\n')
+        sensor_socket.close()
+        raise
+
+    request_data(sensor_socket, 'stopSensing', [])
+    sensor_socket.close()
+
+  return move
+
+
+def main():
+  """
+  The main funciton.
+  """
+  last_sent_moving = 0
+  while True: 
+    sleep(0.1)
+    msg = ""
+    if moving[0] == 1 and last_sent_moving == 0:
+      # tablet started moving
+      msg="Tablet is on the MOVE!!"
+      last_sent_moving = 1
+    else if moving[0] == 0 and last_sent_moving == 1:
+      # tablet stopped
+      msg="Tablet STOPPED"
+      last_sent_moving = 1
+
+    if msg != "":
+      # send 2X notifications to the two static hosts
+      sendmessage(DESTIP1, DESTPORT1, msg, localip, LOCALPORT)
+      sendmessage(DESTIP2, DESTPORT2, msg, localip, LOCALPORT)
+
+
+############ MAIN program ############
+
+TRAINING = 150 
+EFFECTIVE_TRAINING = 50
+             
+localip = getmyip()
+log("my ip:port:  " + localip + ':' + LOCALPORT + '\n')
+log("assuming static host1: " + DESTIP1 + ':' + DESTPORT1 + '\n')
+log("assuming static host2: " + DESTIP2 + ':' + DESTPORT2 + '\n')
+
+port = get_connectionport()
+sensor_socket = getconnection(port)
+request_data(sensor_socket, 'startSensingTimed', [1, 50])
+
+moving = [0]  # global variable indicating whether the user is moving or not
+accel = [0,0,0] 
+threshold = training()
+
+createthread(detect(threshold))
+
+main()
+
