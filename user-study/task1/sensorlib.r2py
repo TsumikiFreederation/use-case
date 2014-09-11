@@ -85,7 +85,11 @@ def getconnection(ap_port):
       return sl4a_socket
     except Exception as e:
       log("Using port", port, "had a problem:", str(e), '\n')
-      continue
+      if 'connection was refused' in str(e):
+        # on non-mobile devices, connection will be refused because there's no sl4a 
+        raise Exception
+      else:
+        continue
 
   log("No ports available.\n")
   exitall()
@@ -105,6 +109,6 @@ def request_data(sl4a_socket, method, args):
     raise
   else:
     result = parsed['result']
-    log(str(method), "data: ", result, '\n')
+    #log(str(method), "data: ", result, '\n')
     return result
 

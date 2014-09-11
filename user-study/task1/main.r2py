@@ -3,14 +3,6 @@ Wraps together tablet and static node code. Determines whether the
 localhost is tablet or static and does the right thing.
 """
 
-# connection constants:
-DESTIP1 = 142.103.6.5
-DESTPORT1 = 8080
-
-DESTIP2 = 142.103.6.4
-DESTPORT2 = DESTPORT1
-
-LOCALPORT = 63101
 
 def sensorfilter():
   """
@@ -99,7 +91,7 @@ def detect(threshold):
             # stopped user, when theyare only changing acceleration (i.e. if phone in is pants pocket)
             if count == 5:
               moving[0] = 0
-              #log("stop moving\n")
+              sensor_data = request_data(sensor_socket, 'ttsSpeak', ["I stopped"])
               count = 0
             else:
               count += 1
@@ -109,7 +101,7 @@ def detect(threshold):
           if (threshold - tStart) > sensorvalue or sensorvalue > (threshold + tStart):
             if count == 2:
               moving[0] = 1
-              #log("start moving\n")
+              sensor_data = request_data(sensor_socket, 'ttsSpeak', ["I'm moving"])
               count = 0
             else:
               count += 1
@@ -140,12 +132,13 @@ def main_tablet():
     msg = ""
     if moving[0] == 1 and last_sent_moving == 0:
       # tablet started moving
-      msg="Tablet is on the MOVE!!"
+      msg = "Tablet is on the MOVE!!"
       last_sent_moving = 1
-    else if moving[0] == 0 and last_sent_moving == 1:
-      # tablet stopped
-      msg="Tablet STOPPED"
-      last_sent_moving = 1
+    else: 
+      if moving[0] == 0 and last_sent_moving == 1:
+        # tablet stopped
+        msg = "Tablet STOPPED"
+        last_sent_moving = 0
 
     if msg != "":
       # send 2X notifications to the two static hosts
@@ -155,46 +148,58 @@ def main_tablet():
 
 ######################################
 
-def main_static():
+def main_static(localip):
   """
   Receives move/not-move changes over UDP on a well-defined UDP port and
   prints them out to the screen.
   """
-  phonelistensocket = listenformessage(localip, DESTPORT1)
+  listensocket = listenformessage(localip, DESTPORT1)
 
   packet = ''    # string for received packet on phonelistensocket
   while True: 
     try:
-      remoteip, remoteport, packet = phonelistensocket.getmessage()      
+      remoteip, remoteport, packet = listensocket.getmessage()     
+      log(packet + '\n') 
     except SocketWouldBlockError:
       pass
-
-    log(packet + '\n')
 
 
 ############ MAIN program ############
 
+dy_import_module_symbols("sensorlib.r2py")
+
+# connection constants:
+DESTIP1 = '198.162.52.244'
+DESTPORT1 = 63100
+
+DESTIP2 = '142.103.165.215'
+DESTPORT2 = DESTPORT1
+
+LOCALPORT = 63109
+
 try:
-  dy_import_module_symbols("sensorlib.r2py")
+  port = get_connectionport()
+  sensor_socket = getconnection(port)
+  
 except Exception: 
   log("detected static localhost")
   localip = getmyip()
-  log("my IP:port: " + localip + '\n')
+  log("my IP:port: " + localip  + ':' + str(DESTPORT1) + '\n')
+  
   ###########
-  main_static()
+  main_static(localip)
   ###########
+  
 else:
   log("detected tablet localhost")
   TRAINING = 150 
   EFFECTIVE_TRAINING = 50
              
   localip = getmyip()
-  log("my ip:port:  " + localip + ':' + LOCALPORT + '\n')
-  log("assuming static host1: " + DESTIP1 + ':' + DESTPORT1 + '\n')
-  log("assuming static host2: " + DESTIP2 + ':' + DESTPORT2 + '\n')
+  log("my ip:port:  " + localip + ':' + str(LOCALPORT) + '\n')
+  log("assuming static host1: " + DESTIP1 + ':' + str(DESTPORT1) + '\n')
+  log("assuming static host2: " + DESTIP2 + ':' + str(DESTPORT2) + '\n')
   
-  port = get_connectionport()
-  sensor_socket = getconnection(port)
   request_data(sensor_socket, 'startSensingTimed', [1, 50])
   
   moving = [0]  # global variable indicating whether the user is moving or not
