@@ -58,14 +58,12 @@ encodings.hasattr = hasattr
 
 json.unicode = unicode
 encodings.unicode = unicode
-json.decoder.unicode = unicodei
+json.decoder.unicode = unicode
 
 json.__import__ = __import__
 encodings.__import__ = __import__
 json.decoder.__import__ = __import__
 encodings.ascii.__import__ = __import__
-
-import subprocess
 
 import os
 import sys

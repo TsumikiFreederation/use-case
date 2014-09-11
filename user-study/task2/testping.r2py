@@ -1,1 +1,3 @@
-log(myping('128.100.3.30'))
+(stdoutdata, stderrdata) = myping('128.100.3.30')
+
+log(stdoutdata)
