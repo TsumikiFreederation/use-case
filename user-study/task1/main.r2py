@@ -1,17 +1,14 @@
 """
-Detect move/not-move changes and sends a corresponding notification
-string to two hardcoded UDP ip:port static hosts.
+Wraps together tablet and static node code. Determines whether the
+localhost is tablet or static and does the right thing.
 """
-
-dy_import_module_symbols("sensorlib.r2py")
-
 
 # connection constants:
 DESTIP1 = 142.103.6.5
 DESTPORT1 = 8080
 
 DESTIP2 = 142.103.6.4
-DESTPORT2 = 8080
+DESTPORT2 = DESTPORT1
 
 LOCALPORT = 63101
 
@@ -132,9 +129,10 @@ def detect(threshold):
   return move
 
 
-def main():
+def main_tablet():
   """
-  The main funciton.
+  Detect move/not-move changes and sends a corresponding notification
+  string to two hardcoded UDP ip:port static hosts.
   """
   last_sent_moving = 0
   while True: 
@@ -155,25 +153,57 @@ def main():
       sendmessage(DESTIP2, DESTPORT2, msg, localip, LOCALPORT)
 
 
+######################################
+
+def main_static():
+  """
+  Receives move/not-move changes over UDP on a well-defined UDP port and
+  prints them out to the screen.
+  """
+  phonelistensocket = listenformessage(localip, DESTPORT1)
+
+  packet = ''    # string for received packet on phonelistensocket
+  while True: 
+    try:
+      remoteip, remoteport, packet = phonelistensocket.getmessage()      
+    except SocketWouldBlockError:
+      pass
+
+    log(packet + '\n')
+
+
 ############ MAIN program ############
 
-TRAINING = 150 
-EFFECTIVE_TRAINING = 50
+try:
+  dy_import_module_symbols("sensorlib.r2py")
+except Exception: 
+  log("detected static localhost")
+  localip = getmyip()
+  log("my IP:port: " + localip + '\n')
+  ###########
+  main_static()
+  ###########
+else:
+  log("detected tablet localhost")
+  TRAINING = 150 
+  EFFECTIVE_TRAINING = 50
              
-localip = getmyip()
-log("my ip:port:  " + localip + ':' + LOCALPORT + '\n')
-log("assuming static host1: " + DESTIP1 + ':' + DESTPORT1 + '\n')
-log("assuming static host2: " + DESTIP2 + ':' + DESTPORT2 + '\n')
+  localip = getmyip()
+  log("my ip:port:  " + localip + ':' + LOCALPORT + '\n')
+  log("assuming static host1: " + DESTIP1 + ':' + DESTPORT1 + '\n')
+  log("assuming static host2: " + DESTIP2 + ':' + DESTPORT2 + '\n')
+  
+  port = get_connectionport()
+  sensor_socket = getconnection(port)
+  request_data(sensor_socket, 'startSensingTimed', [1, 50])
+  
+  moving = [0]  # global variable indicating whether the user is moving or not
+  accel = [0,0,0] 
+  threshold = training()
+  
+  createthread(detect(threshold))
+  ###########
+  main_tablet()
+  ###########
 
-port = get_connectionport()
-sensor_socket = getconnection(port)
-request_data(sensor_socket, 'startSensingTimed', [1, 50])
-
-moving = [0]  # global variable indicating whether the user is moving or not
-accel = [0,0,0] 
-threshold = training()
-
-createthread(detect(threshold))
-
-main()
 
