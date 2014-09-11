@@ -45,6 +45,8 @@ import encodings
 import json.decoder
 import encodings.ascii
 
+import ping
+
 #try:
 from _json import scanstring as c_scanstring
 #except ImportError:
@@ -56,7 +58,7 @@ encodings.hasattr = hasattr
 
 json.unicode = unicode
 encodings.unicode = unicode
-json.decoder.unicode = unicode
+json.decoder.unicode = unicodei
 
 json.__import__ = __import__
 encodings.__import__ = __import__
@@ -149,7 +151,7 @@ def get_safe_context(args):
   usercontext["getlasterror"] = emulmisc.getlasterror
 
   usercontext["json_parse"] = json.loads
-  usercontext['myping'] = my_ping
+  usercontext['myping'] = ping.my_ping
       
   # call the initialize function
   usercontext['callfunc'] = 'initialize'
