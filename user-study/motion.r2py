@@ -3,6 +3,8 @@ motion.r2py -- Sensibility Testbed code for determining and indicating
 movement of cellphone user
 
 Thomas Pierce, UBC, Canada
+Yanyan Zhuang, UBC/NYU
+
 """
 
 def filter():
@@ -40,20 +42,38 @@ def filter():
     return [(Xl ** 2 + Yl ** 2 + Zl ** 2) ** 0.5, Xl, Yl, Zl]
 
 
-dy_import_module_symbols("sensorlib.r2py")
-port = get_connectionport()
-sensor_socket = getconnection(port)
-result = request_data(sensor_socket, 'startSensingTimed', [1, 50])
-log(result+'\n\n')
 
-accel = [0,0,0]
-t = 0
 
-# Start by collecting accel. data for 100 loops, but only use data after 
-# first 50 loops, when the filtered accel. data has plateaued.
+def recvmovement(listensocket):
+  """
+  A receiving thread that receives movement info from a phone/tablet.
+  """
+  
+  while True:
+    try:     
+      # receive packets from sender
+      remoteip, remoteport, message = listensocket.getmessage()
+      log(message + '\n')
+    except SocketWouldBlockError:
+      pass
 
-# Phone should be motionless during this time
-for i in range (1, 150):
+      
+def movement_detect():
+  """
+  A mobile device detects movement.
+  """
+  port = get_connectionport()
+  sensor_socket = getconnection(port)
+  result = request_data(sensor_socket, 'startSensingTimed', [1, 50])
+
+  accel = [0,0,0]
+  t = 0
+
+  # Start by collecting accel. data for 100 loops, but only use data after 
+  # first 50 loops, when the filtered accel. data has plateaued.
+
+  # Phone should be motionless during this time
+  for i in range (1, 150):
     try:
         [ss, Xl, Yl, Zl] = filter()
         accel = [Xl, Yl, Zl]
@@ -68,20 +88,20 @@ for i in range (1, 150):
         sensor_socket.close()
         raise
 
-# Average collected data to use as threshold
-t = t/50
-sensor_data = request_data(sensor_socket, 'ttsSpeak', ['Threshold set to ' + str(round(t, 3))])
+  # Average collected data to use as threshold
+  t = t/50
+  sensor_data = request_data(sensor_socket, 'ttsSpeak', ['Threshold set to ' + str(round(t, 3))])
 
-# Thresholds for indicating start/stop of movements
-tStop = t * 0.065
-tStart = t * 0.075
+  # Thresholds for indicating start/stop of movements
+  tStop = t * 0.065
+  tStart = t * 0.075
 
-# Count is used as a marker of how many times you have significantly exceeded the threshold
-count = 0
-# Moving is the flag indicating whether or not the user is moving
-moving = False
+  # Count is used as a marker of how many times you have significantly exceeded the threshold
+  count = 0
+  # Moving is the flag indicating whether or not the user is moving
+  moving = False
 
-while(True):
+  while(True):
     try:
         [ss, Xl, Yl, Zl] = filter()
         accel = [Xl, Yl, Zl]
@@ -116,5 +136,19 @@ while(True):
         sensor_socket.close()
         raise
 
-request_data(sensor_socket, 'stopSensing', [])
-sensor_socket.close()
+  request_data(sensor_socket, 'stopSensing', [])
+  sensor_socket.close()
+
+  
+# the list of dest IP to send movement info to (hard coded) 
+destlist = ['198.162.52.244', '142.103.165.215']  
+        
+try:
+  dy_import_module_symbols("sensorlib.r2py")
+except Exception: 
+  (localip, localport) = (getmyip(), 63101)
+  listensocket = listenformessage(localip, localport)
+  log("I'm not a mobile device. But I'm listening on " + localip + '....\n')
+  recvmovement(listensocket)
+else:
+  movement_detect()
