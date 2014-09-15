@@ -57,6 +57,8 @@ def generate_status_page():
   for nodeip in mycontext['neighborlist']:
     if nodeip in mycontext['row']:
       webpage = webpage + mycontext['row'][nodeip]+'\n'
+    elif nodeip == mycontext['myip']:
+      webpage = webpage + encode_row(mycontext['myip'],mycontext["neighborlist"],mycontext['latency'].copy()) + '\n'
     else:
       webpage = webpage + '<tr><td>'+nodeip+'</td><td>No Data Reported</td></tr>\n'
 
