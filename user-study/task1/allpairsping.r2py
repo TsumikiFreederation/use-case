@@ -7,18 +7,17 @@
 
 """
 
-
 # send a probe message to each neighbor
 def probe_neighbors_forever():
   # Call me again in 10 seconds
   while True:
     for neighborip in mycontext["neighborlist"]:
       mycontext['sendtime'][neighborip] = getruntime()
-      if neighborip == getmyip():
+      if neighborip == mycontext['myip']:
         #do nothing
         continue
-      sendmessage(neighborip, mycontext['port'], 'ping',getmyip(),mycontext['port'])
-      sendmessage(neighborip,mycontext['port'],'share'+encode_row(getmyip(),mycontext["neighborlist"],mycontext['latency'].copy()),getmyip(),mycontext['port'])
+      sendmessage(neighborip, mycontext['port'], 'ping',mycontext['myip'],mycontext['port'])
+      sendmessage(neighborip,mycontext['port'],'share'+encode_row(mycontext['myip'],mycontext["neighborlist"],mycontext['latency'].copy()),mycontext['myip'],mycontext['port'])
       sleep(0.5)
     #sleep for 10 sec and start from while loop again
     sleep(10)
@@ -29,7 +28,7 @@ def probe_neighbors_forever():
 # Handle an incoming message
 def got_message(srcip,srcport,mess):
   if mess == 'ping':
-    sendmessage(srcip,srcport,'pong',getmyip(), pingport)
+    sendmessage(srcip,srcport,'pong',mycontext['myip'], pingport)
   elif mess == 'pong':
     # elapsed time is now - time when I sent the ping
     mycontext['latency'][srcip] = getruntime() - mycontext['sendtime'][srcip]
@@ -53,7 +52,7 @@ def encode_row(rowip, neighborlist, latencylist):
 
 # Generates a HTML page that represents the current status of the program
 def generate_status_page():
-  webpage = "<html><head><title>Latency Information</title></head><body><h1>Latency information from "+getmyip()+' </h1><table border="1">'
+  webpage = "<html><head><title>Latency Information</title></head><body><h1>Latency information from "+mycontext['myip']+' </h1><table border="1">'
   webpage = webpage + "<tr><td></td><td>"+ "</td><td>".join(mycontext['neighborlist'])+"</td></tr>"
   for nodeip in mycontext['neighborlist']:
     if nodeip in mycontext['row']:
@@ -69,16 +68,26 @@ def generate_status_page():
 
 # Displays a web page with the latency information
 def handle_http_request(srcip,srcport,connobj):
+  log('received request from',srcip,'\n')
+
   # Get the header
   total_data = ''
-  new_data = ''
   # The HTTP header ends once we see the char combination '\n\n', which
   # is an empty string.
-  while '\n\n' not in new_data:
+  while '\n\n' not in total_data:
     # Receive in chunks to avoid reading too much data
-    data = connobj.recv(4096)
-    new_data = data.replace('\r\n', '\n')
-    total_data += new_data
+    try:
+      data = connobj.recv(4096)
+    except SocketWouldBlockError:
+      # retry if they haven't completed sending the header
+      sleep(.05)
+      continue
+    except SocketClosedRemote:
+      log('client from',srcip,'aborted before sending HTTP header...\n')
+      return
+    total_data += data
+    total_data = total_data.replace('\r\n', '\n')
+
   header, overflow = total_data.split('\n\n', 1)
     
 
@@ -101,17 +110,20 @@ def handle_http_request(srcip,srcport,connobj):
     data = 'HTTP/1.1 200 OK\nContent-Type: text/html\nContent-Length: '+str(len(webpage))+'\nServer: Seattle Testbed\n\n'+webpage
 
   # send the response
-  try:
+ 
     sent = 0
     while sent < len(data):
-      sent += connobj.send(data[sent:])
-    # and we're done, so let's close this connection...
-    connobj.close()
-  except SocketClosedRemote, e:
-    if "Socket closed" in str(e):
-      # We can't do anything if the socket is closed
-      return
-    raise  
+      try:
+        sent += connobj.send(data[sent:])  
+      except SocketWouldBlockError:
+        # retry if response hasn't been sent yet
+        sleep(.05)
+        continue
+      except SocketClosedRemote:
+        log('client from',srcip,'aborted before response could be sent...\n')
+        return
+      # and we're done, so let's close this connection... 
+      connobj.close()
 
 def handle_message_forever():
   while True:
@@ -134,6 +146,8 @@ def handle_connection_forever():
 if callfunc == 'initialize':
   # this holds the response information (i.e. when nodes responded)
   mycontext['latency'] = {}
+  mycontext['myip'] = getmyip()
+  log(mycontext['myip'])
 
   # this remembers when we sent a probe
   mycontext['sendtime'] = {}
@@ -151,21 +165,19 @@ if callfunc == 'initialize':
   except FileNotFoundError, e:
     raise FileNotFoundError("neighboriplist.txt file doesn't exist. Please provide the required file in same directory.")
 
-  ip = getmyip() 
   if len(callargs) != 1:
     raise Exception, "Must specify the port to use"
   pingport = int(callargs[0])
   mycontext['port'] = pingport
-  mycontext['ip'] = ip
 
   #listen for a new message and call handle_message in new thread
-  udpserversocket = listenformessage(mycontext['ip'], mycontext['port'])
+  udpserversocket = listenformessage(mycontext['myip'], mycontext['port'])
   createthread(handle_message_forever)
   
   createthread(probe_neighbors_forever)
   
   #listen for connection and call handle_http_request once a connection is got
-  connobj = listenforconnection(ip,mycontext['port']) 
+  connobj = listenforconnection(mycontext['myip'],mycontext['port']) 
   createthread(handle_connection_forever)
   
 
