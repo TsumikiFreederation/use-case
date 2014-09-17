@@ -1,0 +1,68 @@
+"""
+<Program Name>
+  friend.r2py
+
+<Started>
+  Sep 17, 2014
+
+<Author>
+  Yanyan Zhuang
+
+<Purpose>
+  A friend node reports availability to a server.
+"""
+
+#dy_import_module_symbols("random.r2py")
+
+
+def friend_init():
+  """
+  Initialized the node with its unique random string.
+  """
+  filename = FRIENDS_IDFILE
+  nodeid = ""
+  
+  if filename not in listfiles():  
+    # ID file not exist
+    nodeid = randombytes()[:ID_LENGTH] #random_randombytes(ID_LENGTH)
+    filefd = openfile(filename, True)
+    filefd.writeat(nodeid, 0)
+    filefd.close()
+  else: 
+    # ID file exists
+    filefd = openfile(filename, False)
+    nodeid = filefd.readat(None, 0)
+    filefd.close()
+    
+  return nodeid
+
+
+def main():
+  """
+  Main program: connect to a server.
+  """
+  
+  myid = friend_init()
+
+  # open a connection to the remote server
+  myip = getmyip()
+  log('friend ' + myid + ' reporting to server at ' + myip + '..\n')
+  serversocket = openconnection(DEST_IP, DEST_PORT, myip, 12345, 5)
+  sendstring = myid + '\t' + myip
+
+  while True:
+    try:
+      serversocket.send(sendstring)
+      sleep(10)   # TODO: change this to every 5min
+    except SocketWouldBlockError:
+      pass    
+  
+
+############ main program ############  
+FRIENDS_IDFILE = "friendsid"  # file that stores the unique ID of a node
+ID_LENGTH = 8  # length of the node ID
+
+DEST_IP = '198.162.52.146' # IP of kramer.nss.cs.ubc.ca
+DEST_PORT = 63109
+
+main()
