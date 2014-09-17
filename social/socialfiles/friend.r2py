@@ -46,16 +46,30 @@ def main():
 
   # open a connection to the remote server
   myip = getmyip()
-  log('friend ' + myid + ' reporting to server at ' + myip + '..\n')
-  serversocket = openconnection(DEST_IP, DEST_PORT, myip, 12345, 5)
   sendstring = myid + '\t' + myip
+  serversocket = None
 
   while True:
     try:
+      serversocket = openconnection(DEST_IP, DEST_PORT, myip, 12345, OPENCONN_TIMEOUT)
+    except ConnectionRefusedError:
+      log("The server is not listening.\n")
+    except TimeoutError:  
+      log("Connection timed out after " + str(OPENCONN_TIMEOUT) + "secs.\n")
+    except InternetConnectivityError: 
+      log("The network is down.\n")
+    except CleanupInProgressError:
+      log("The (ip, port) tuple is still being cleaned up by the OS.\n")
+      sleep(3)
+      continue
+
+    try:
       serversocket.send(sendstring)
-      sleep(10)   # TODO: change this to every 5min
+      log('friend ' + myid + ' reporting to server at ' + myip + '..\n')
+      serversocket.close() 
+      sleep(5)   # TODO: change this to every 5min
     except SocketWouldBlockError:
-      pass    
+      pass
   
 
 ############ main program ############  
@@ -64,5 +78,6 @@ ID_LENGTH = 8  # length of the node ID
 
 DEST_IP = '198.162.52.146' # IP of kramer.nss.cs.ubc.ca
 DEST_PORT = 63109
+OPENCONN_TIMEOUT = 5  # secs before openconnection times out
 
 main()
