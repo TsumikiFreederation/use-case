@@ -12,7 +12,7 @@
   A friend node reports availability to a server.
 """
 
-#dy_import_module_symbols("random.r2py")
+dy_import_module_symbols("random.r2py")
 
 
 def friend_init():
@@ -24,9 +24,9 @@ def friend_init():
   
   if filename not in listfiles():  
     # ID file not exist
-    nodeid = randombytes()[:ID_LENGTH] #random_randombytes(ID_LENGTH)
+    nodeid = random_nbit_int(ID_LENGTH)
     filefd = openfile(filename, True)
-    filefd.writeat(nodeid, 0)
+    filefd.writeat(str(nodeid), 0)
     filefd.close()
   else: 
     # ID file exists
@@ -46,30 +46,39 @@ def main():
 
   # open a connection to the remote server
   myip = getmyip()
-  sendstring = myid + '\t' + myip
+  sendstring = str(myid) + '\t' + myip
   serversocket = None
 
   while True:
     try:
       serversocket = openconnection(DEST_IP, DEST_PORT, myip, 12345, OPENCONN_TIMEOUT)
     except ConnectionRefusedError:
-      log("The server is not listening.\n")
+      log("The server is not listening. Retry after 5 sec.\n")
+      sleep(5)
+      continue
     except TimeoutError:  
       log("Connection timed out after " + str(OPENCONN_TIMEOUT) + "secs.\n")
+      continue
     except InternetConnectivityError: 
       log("The network is down.\n")
+      continue
+    except DuplicateTupleError:
+      log("The (ip, port) tuple is already used.\n")
     except CleanupInProgressError:
       log("The (ip, port) tuple is still being cleaned up by the OS.\n")
-      sleep(3)
+      sleep(20)
       continue
 
-    try:
-      serversocket.send(sendstring)
-      log('friend ' + myid + ' reporting to server at ' + myip + '..\n')
-      serversocket.close() 
-      sleep(5)   # TODO: change this to every 5min
-    except SocketWouldBlockError:
-      pass
+    if serversocket != None:
+      try:
+        serversocket.send(sendstring)
+        log('friend ' + str(myid) + ' reporting to server at ' + myip + '..\n')
+        serversocket.close() 
+        sleep(5)   # TODO: change this to every 5min
+      except SocketWouldBlockError:
+        pass
+      except SocketClosedLocal:
+        log("Local socket closed or remote server down.\n")
   
 
 ############ main program ############  
