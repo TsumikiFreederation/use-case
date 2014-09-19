@@ -13,6 +13,7 @@
 """
 
 dy_import_module_symbols("random.r2py")
+#dy_import_module_symbols("time.r2py")
 
 
 def friend_init():
@@ -51,7 +52,7 @@ def main():
 
   while True:
     try:
-      serversocket = openconnection(DEST_IP, DEST_PORT, myip, 12345, OPENCONN_TIMEOUT)
+      serversocket = openconnection(DEST_IP, DEST_PORT, myip, 63104, OPENCONN_TIMEOUT)
     except ConnectionRefusedError:
       log("The server is not listening. Retry after 5 sec.\n")
       sleep(5)
@@ -72,9 +73,11 @@ def main():
     if serversocket != None:
       try:
         serversocket.send(sendstring)
-        log('friend ' + str(myid) + ' reporting to server at ' + myip + '..\n')
+        #time_updatetime(63105)
+        currenttime = getruntime()
+        log(str(currenttime) + ' friend ' + str(myid) + ' reporting to server at ' + myip + '..\n')
         serversocket.close() 
-        sleep(5)   # TODO: change this to every 5min
+        sleep(5*60)   # TODO: change this to every 5min
       except SocketWouldBlockError:
         pass
       except SocketClosedLocal:
