@@ -1,0 +1,183 @@
+"""
+<Author>
+  Yanyan Zhuang
+
+<Start Date>
+  June 20, 2013
+
+<Description>
+  Request current timestamp from NTP server, and get date, year, time. 
+  Returns a dictionary of UTC of current time. Eg: 
+  {'hour': 0, 'month': 'June', 'second': 33, 'year': 2013, 
+    'day in week': 'Friday', 'day': 21, 'minute': 26}
+  
+  Inspired by:
+  https://github.com/php/php-src/blob/master/ext/date/lib/unixtime2tm.c
+
+<Usage>
+  ntp2utc_getUTC(port)
+  
+"""
+  
+dy_import_module_symbols("ntp_time.r2py")
+dy_import_module_symbols("time_interface.r2py")
+dy_import_module_symbols("geoip_client.r2py")
+dy_import_module_symbols("math.r2py")
+
+UTC = {}
+
+EPOCH = 1900  # the starting year of NTP epoch
+
+SEC_MIN = 60  # number of secs per minute
+SEC_HOUR = 3600 # number of secs per hour
+SEC_DAY = 86400  # 24*60*60, number of secs per day
+
+weekday = ["Sunday", "Monday", "Tuesday", "Wednesday", \
+                   "Thursday", "Friday", "Saturday"]
+
+# how many days into the current year, and determine which month 
+# the current day belongs to              
+months_leap = [-1, 30, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
+months_normal = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
+
+month = ["January", "February", "March", "April", "May", "June", "July", \
+			"August", "September", "October", "November", "December"]
+               
+DAY_YEAR = 365  # number of days in a normal year
+DAY_LYEAR = 366  # number of days in a leap year
+DAY_FOUR_YEAR = 1461  # DAY_YEAR*3+DAY_LYEAR
+                      # number of days in a 4-year period
+
+
+def ntp2utc_get_day_from_epoch(timestamp):
+  """
+  number of days passed since year 1970
+  
+  """
+  return int (math_ceil(timestamp / SEC_DAY))
+  
+  
+def ntp2utc_get_day_of_week(timestamp):
+  """
+  return the day in a week given the current timestamp from NTP
+  
+  """
+  num_days = ntp2utc_get_day_from_epoch(timestamp)
+  day_of_week = weekday[num_days % 7]
+  return day_of_week
+  
+
+def ntp2utc_is_leap(year):
+  """
+  whether year is a leap year or not
+  
+  """
+  if (year % 400) == 0:
+    return True
+  elif (year % 100) == 0:
+    return False
+  elif (year % 4) == 0:
+    return True
+  else: 
+    return False
+      
+
+def ntp2utc_get_current_year(timestamp):
+  """
+  get the current year, current day in the year, and   
+  the remaining seconds in a tuple. 
+  Eg, [2013, 171, remainder] for June 20, 2013
+  
+  """
+  num_days = ntp2utc_get_day_from_epoch(timestamp)
+  remainder = timestamp % SEC_DAY  # for calculating HH:MM:SS
+  cur_year = EPOCH
+  
+  if num_days >= DAY_FOUR_YEAR:
+    cur_year += 4 * (math_floor (num_days / DAY_FOUR_YEAR))
+    num_days = num_days % DAY_FOUR_YEAR 
+    
+  while num_days >= DAY_LYEAR:
+    cur_year += 1      
+    if ntp2utc_is_leap(cur_year):
+      num_days -= DAY_LYEAR
+    else: 
+      num_days -= DAY_YEAR
+      
+  return [int(cur_year), int(num_days), remainder]
+
+
+def ntp2utc_get_month_day(year, day):
+  """
+  get the current month and current day in the month in a tuple.
+  Eg, [6, 20] for June 20
+  
+  """
+  months = []
+  if ntp2utc_is_leap(year):
+    months = months_leap
+  else:
+    months = months_normal
+  
+  index = 11
+  while (index > 0):
+    if day > months[index]:
+      break
+    index -= 1
+    
+  month = index
+  day -= months[index]
+  return [month, day]
+
+
+def ntp2utc_get_time(seconds):
+  """
+  calculating HH:MM:SS 
+  
+  """
+  hour = math_floor(seconds / SEC_HOUR)
+  minute = math_floor((seconds - hour * SEC_HOUR) / SEC_MIN)
+  second = seconds % SEC_MIN
+  return [hour, minute, second]
+  
+  
+def ntp2utc_getUTC(port):
+  """
+  <Purpose>
+    Request current timestamp from NTP server, and get date, year, time
+
+  <Arguments>
+    None.
+
+  <Exceptions>
+    None.
+
+  <Side Effects>
+    None.
+
+  <Returns>
+    Dictionary of UTC of current time.
+    Eg, {'hour': 0, 'month': 'June', 'second': 33, 'year': 2013, 
+         'day in week': 'Friday', 'day': 21, 'minute': 26}
+    
+  """
+  ntp_time_updatetime(port)  # sync with NTP server
+  t = time_gettime() # get the real timestamp from NTP
+  
+  day_of_week = ntp2utc_get_day_of_week(t)
+  UTC['day_in_week'] = day_of_week
+  
+  [year, day_in_year, remain_sec] = ntp2utc_get_current_year(t)
+  UTC['year'] = year 
+  
+  [mon, day] = ntp2utc_get_month_day(year, day_in_year)
+  UTC['month']  = month[mon]
+  UTC['day'] = day
+  
+  [hh, mm, ss] = ntp2utc_get_time(remain_sec)
+  UTC['hour'] = int(hh)
+  UTC['minute'] = int(mm)
+  UTC['second'] = int(ss)
+
+  return UTC
+

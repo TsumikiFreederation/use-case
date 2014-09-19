@@ -13,7 +13,7 @@
 """
 
 dy_import_module_symbols("random.r2py")
-#dy_import_module_symbols("time.r2py")
+dy_import_module_symbols("ntp2utc.r2py")
 
 
 def friend_init():
@@ -73,9 +73,20 @@ def main():
     if serversocket != None:
       try:
         serversocket.send(sendstring)
-        #time_updatetime(63105)
-        currenttime = getruntime()
-        log(str(currenttime) + ' friend ' + str(myid) + ' reporting to server at ' + myip + '..\n')
+
+        #time_register_method("updatetime", time_updatetime)
+        #ntp_time_updatetime(63105)
+          
+        currenttime = ntp2utc_getUTC(63105) 
+        day = currenttime['day']
+        hour = currenttime['hour'] - 7   # convert to Pacific time
+        if hour < 0:
+          hour = hour + 24
+          day = day -1
+          
+        timestring = str(currenttime['month']) + ' ' + str(day) + ' ' + str(hour) + \
+           ':' + str(currenttime['minute']) + ':' + str(currenttime['second'])
+        log(timestring + ' friend ' + str(myid) + ' reporting to server at ' + myip + '..\n')
         serversocket.close() 
         sleep(5*60)   # TODO: change this to every 5min
       except SocketWouldBlockError:
