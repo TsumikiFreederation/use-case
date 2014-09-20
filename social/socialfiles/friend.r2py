@@ -90,6 +90,9 @@ def main():
       
     # we've connected, send a message and disconnect...
     messagetosend = str(myid) + '\t' + myip
+    
+    try:
+      # three times, we want to try to send if it would block...
       for attempt in range(3):
         try:
           serversocket.send(messagetosendg)
@@ -107,6 +110,7 @@ def main():
           log(timestring + ' friend ' + str(myid) + ' reported to server at ' + myip + '..\n')
       else:
         log('Tried 3 times to send and it blocked each time.  Aborting this connection!\n')
+        
     finally:
       serversocket.close()
       # wait for 5 mins and try again...
