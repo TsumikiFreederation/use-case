@@ -34,6 +34,7 @@ def friend_init():
     nodeid = filefd.readat(None, 0)
     filefd.close()
     
+  # need to get the base time from NTP so we know how to calculate the offset...
   while True:
     try:
       time.time_updatetime(63105)
@@ -54,14 +55,23 @@ def main():
   myid = friend_init()
   log('finished initialization\n')
 
-  # open a connection to the remote server
-  myip = getmyip()
-  sendstring = str(myid) + '\t' + myip
-  serversocket = None
+  candidate_port_list = list(getresources()[0]['connport'])
+  currentcandidate_port = candidate_port_list.pop()
 
+  # open a connection to the remote server, send my info, and then sleep 5 mins (if successful)
   while True:
+    # handle the (very unlikely) situation where I have tried all local ports and found them in use.
+    if candidate_port_list == []:
+      candidate_port_list = list(getresources()[0]['connport'])
+        
     try:
+      myip=getmyip()
       serversocket = openconnection(DEST_IP, DEST_PORT, myip, 63104, OPENCONN_TIMEOUT)
+    except DuplicateTupleError:
+      # CHOOSE A NEW CANDIDATE PORT IF IN USE...
+      currentcandidate_port = candidate_port_list.pop()
+      log("The (ip, port) tuple is already used.  Moving to port",currentcandidate_port,"\n")
+      continue
     except ConnectionRefusedError:
       log("The server is not listening. Retry after 5 sec.\n")
       sleep(5)
@@ -71,27 +81,27 @@ def main():
       continue
     except InternetConnectivityError: 
       log("The network is down.\n")
+      sleep(5)
       continue
-    except DuplicateTupleError:
-      log("The (ip, port) tuple is already used.\n")
     except CleanupInProgressError:
       log("The (ip, port) tuple is still being cleaned up by the OS.\n")
       sleep(20)
       continue
 
     if serversocket != None:
+      sendstring = str(myid) + '\t' + myip
       try:
         serversocket.send(sendstring)
-        
-        timestring = str(time.time_gettime())
-        log(timestring + ' friend ' + str(myid) + ' reporting to server at ' + myip + '..\n')
-        
-        serversocket.close() 
-        sleep(5*60)   # TODO: change this to every 5min
       except SocketWouldBlockError:
         pass
       except SocketClosedLocal:
         log("Local socket closed or remote server down.\n")
+      else:
+        timestring = str(time.time_gettime())
+        log(timestring + ' friend ' + str(myid) + ' reported to server at ' + myip + '..\n')
+        sleep(5*60)  
+      finally:
+        serversocket.close() 
   
 
 ############ main program ############  
