@@ -73,16 +73,6 @@ def main():
     if serversocket != None:
       try:
         serversocket.send(sendstring)
-          
-        """currenttime = ntp2utc_getUTC(63105) 
-        day = currenttime['day']
-        hour = currenttime['hour'] - 7   # convert to Pacific time
-        if hour < 0:
-          hour = hour + 24
-          day = day -1
-          
-        timestring = str(currenttime['month']) + ' ' + str(day) + ' ' + str(hour) + \
-           ':' + str(currenttime['minute']) + ':' + str(currenttime['second'])"""
         
         time.time_updatetime(63105)
         timestring = str(time.time_gettime())
