@@ -56,7 +56,6 @@ def main():
   log('finished initialization\n')
 
   candidate_port_list = list(getresources()[0]['connport'])
-  currentcandidate_port = candidate_port_list.pop()
 
   # open a connection to the remote server, send my info, and then sleep 5 mins (if successful)
   while True:
@@ -70,7 +69,7 @@ def main():
     except DuplicateTupleError:
       # CHOOSE A NEW CANDIDATE PORT IF IN USE...
       currentcandidate_port = candidate_port_list.pop()
-      log("The (ip, port) tuple is already used.  Moving to port",currentcandidate_port,"\n")
+      log("The (ip, port) tuple is already used.  Moving to port ",currentcandidate_port,"\n")
       continue
     except ConnectionRefusedError:
       log("The server is not listening. Retry after 5 sec.\n")
@@ -95,19 +94,22 @@ def main():
       # three times, we want to try to send if it would block...
       for attempt in range(3):
         try:
-          serversocket.send(messagetosendg)
+          serversocket.send(messagetosend)
+          # success!  Log this...
+          timestring = str(time.time_gettime())
+          log(timestring + ' friend ' + str(myid) + ' reported to server at ' + myip + '..\n')
+          break
         except SocketWouldBlockError:
+          log("SocketWouldBlockError\n")
           sleep(1)
         except SocketClosedLocal:
           log("Local socket closed or remote server down.\n")
           break
         except SocketClosedRemote:
           log("Local socket closed or remote server down.\n")
-          break
-        else:
-          # success!  Log this...
-          timestring = str(time.time_gettime())
-          log(timestring + ' friend ' + str(myid) + ' reported to server at ' + myip + '..\n')
+          break  
+        except Exception as e:
+          log("Unexpected error " + str(e) + "\n")
       else:
         log('Tried 3 times to send and it blocked each time.  Aborting this connection!\n')
         
