@@ -87,21 +87,32 @@ def main():
       log("The (ip, port) tuple is still being cleaned up by the OS.\n")
       sleep(20)
       continue
-
-    if serversocket != None:
-      sendstring = str(myid) + '\t' + myip
-      try:
-        serversocket.send(sendstring)
-      except SocketWouldBlockError:
-        pass
-      except SocketClosedLocal:
-        log("Local socket closed or remote server down.\n")
+      
+    # we've connected, send a message and disconnect...
+    messagetosend = str(myid) + '\t' + myip
+      for attempt in range(3):
+        try:
+          serversocket.send(messagetosendg)
+        except SocketWouldBlockError:
+          sleep(1)
+        except SocketClosedLocal:
+          log("Local socket closed or remote server down.\n")
+          break
+        except SocketClosedRemote:
+          log("Local socket closed or remote server down.\n")
+          break
+        else:
+          # success!  Log this...
+          timestring = str(time.time_gettime())
+          log(timestring + ' friend ' + str(myid) + ' reported to server at ' + myip + '..\n')
       else:
-        timestring = str(time.time_gettime())
-        log(timestring + ' friend ' + str(myid) + ' reported to server at ' + myip + '..\n')
-        sleep(5*60)  
-      finally:
-        serversocket.close() 
+        log('Tried 3 times to send and it blocked each time.  Aborting this connection!\n')
+    finally:
+      serversocket.close()
+      # wait for 5 mins and try again...
+      sleep(5*60)  
+
+    
   
 
 ############ main program ############  
