@@ -13,8 +13,7 @@
 """
 
 dy_import_module_symbols("random.r2py")
-#dy_import_module_symbols("ntp2utc.r2py")
-time = dy_import_module("time.r2py")  # Recommended: Use module import
+time = dy_import_module("time.r2py")
 
 def friend_init():
   """
@@ -35,6 +34,15 @@ def friend_init():
     nodeid = filefd.readat(None, 0)
     filefd.close()
     
+  while True:
+    try:
+      time.time_updatetime(63105)
+    except SocketWouldBlockError:
+      sleep(5)
+      log('failed to update time, retrying...\n')
+    else:
+      break
+
   return nodeid
 
 
@@ -44,6 +52,7 @@ def main():
   """
   
   myid = friend_init()
+  log('finished initialization\n')
 
   # open a connection to the remote server
   myip = getmyip()
@@ -74,7 +83,6 @@ def main():
       try:
         serversocket.send(sendstring)
         
-        time.time_updatetime(63105)
         timestring = str(time.time_gettime())
         log(timestring + ' friend ' + str(myid) + ' reporting to server at ' + myip + '..\n')
         
