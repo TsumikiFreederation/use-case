@@ -13,8 +13,8 @@
 """
 
 dy_import_module_symbols("random.r2py")
-dy_import_module_symbols("ntp2utc.r2py")
-
+#dy_import_module_symbols("ntp2utc.r2py")
+time = dy_import_module("time.r2py")  # Recommended: Use module import
 
 def friend_init():
   """
@@ -27,7 +27,7 @@ def friend_init():
     # ID file not exist
     nodeid = random_nbit_int(ID_LENGTH)
     filefd = openfile(filename, True)
-    filefd.writeat(str(nodeid), 0)
+    filefd.writeat(str(nodeid), 0) 
     filefd.close()
   else: 
     # ID file exists
@@ -73,11 +73,8 @@ def main():
     if serversocket != None:
       try:
         serversocket.send(sendstring)
-
-        #time_register_method("updatetime", time_updatetime)
-        #ntp_time_updatetime(63105)
           
-        currenttime = ntp2utc_getUTC(63105) 
+        """currenttime = ntp2utc_getUTC(63105) 
         day = currenttime['day']
         hour = currenttime['hour'] - 7   # convert to Pacific time
         if hour < 0:
@@ -85,8 +82,12 @@ def main():
           day = day -1
           
         timestring = str(currenttime['month']) + ' ' + str(day) + ' ' + str(hour) + \
-           ':' + str(currenttime['minute']) + ':' + str(currenttime['second'])
+           ':' + str(currenttime['minute']) + ':' + str(currenttime['second'])"""
+        
+        time.time_updatetime(63105)
+        timestring = str(time.time_gettime())
         log(timestring + ' friend ' + str(myid) + ' reporting to server at ' + myip + '..\n')
+        
         serversocket.close() 
         sleep(5*60)   # TODO: change this to every 5min
       except SocketWouldBlockError:
