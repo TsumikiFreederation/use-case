@@ -1,0 +1,3550 @@
+"""
+<Program Name>
+  friend.r2py
+
+<Started>
+  Sep 17, 2014
+
+<Author>
+  Yanyan Zhuang
+
+<Purpose>
+  A friend node reports availability to a server.
+"""
+
+#begin include random.r2py
+""" 
+<Program Name>
+  random.r2py
+
+<Author>
+  Justin Cappos: random_sample
+
+  Modified by Anthony Honstain
+    random_nbit_int and random_long_to_bytes is modified from 
+    Python Cryptography Toolkit and was part of pycrypto which 
+    is maintained by Dwayne C. Litzenberger
+    
+    random_range, random_randint, and random_int_below are modified 
+    from the Python 2.6.1 random.py module. Which was:
+    Translated by Guido van Rossum from C source provided by
+    Adrian Baddeley.  Adapted by Raymond Hettinger for use with
+    the Mersenne Twister  and os.urandom() core generators.  
+
+<Purpose>
+  Random routines (similar to random module in Python)
+  
+  
+<Updates needed when emulmisc.py adds randombytes function>
+  TODO-
+    random_nbit_int currently uses random_randombytes as a source 
+    of random bytes, this is not a permanent fix (the extraction 
+    of random bytes from the float is not portable). The change will
+    likely be made to random_randombytes (since calls os.urandom will
+    likely be restricted to a limited number of bytes).  
+  TODO - 
+    random_randombytes will remained but serve as a helper function
+    to collect the required number of bytes. Calls to randombytes
+    will be restricted to a set number of bytes at a time, since
+    allowing an arbitrary request to os.urandom would circumvent 
+    performance restrictions. 
+  TODO - 
+    _random_long_to_bytes will no longer be needed.  
+      
+"""
+
+#begin include math.r2py
+""" Justin Cappos -- substitute for a few python math routines"""
+
+def math_ceil(x):
+  xint = int(x)
+  
+  # if x is positive and not equal to itself truncated then we should add 1
+  if x > 0 and x != xint:
+    xint = xint + 1
+
+  # I return a float because math.ceil does
+  return float(xint)
+
+
+
+def math_floor(x):
+  xint = int(x)
+  
+  # if x is negative and not equal to itself truncated then we should subtract 1
+  if x < 0 and x != xint:
+    xint = xint - 1
+
+  # I return a float because math.ceil does
+  return float(xint)
+
+
+
+math_e = 2.7182818284590451
+math_pi = 3.1415926535897931
+
+# Algorithm from logN.py on
+# http://en.literateprograms.org/Logarithm_Function_(Python)#chunk
+# MIT license
+#
+# hmm, math_log(4.5,4)      == 1.0849625007211561
+# Python's math.log(4.5,4)  == 1.0849625007211563
+# I'll assume this is okay.
+def math_log(X, base=math_e, epsilon=1e-16):
+  # JMC: The domain of the log function is {n | n > 0)
+  if X <= 0:
+    raise ValueError, "log function domain error"
+
+  # log is logarithm function with the default base of e
+  integer = 0
+  if X < 1 and base < 1:
+    # BUG: the cmath implementation can handle smaller numbers...
+    raise ValueError, "math domain error"
+  while X < 1:
+    integer -= 1
+    X *= base
+  while X >= base:
+    integer += 1
+    X /= base
+  partial = 0.5               # partial = 1/2 
+  X *= X                      # We perform a squaring
+  decimal = 0.0
+  while partial > epsilon:
+    if X >= base:             # If X >= base then a_k is 1 
+      decimal += partial      # Insert partial to the front of the list
+      X = X / base            # Since a_k is 1, we divide the number by the base
+    partial *= 0.5            # partial = partial / 2
+    X *= X                    # We perform the squaring again
+  return (integer + decimal)
+
+
+#end include math.r2py
+
+CACHE = {'bytes': ''}
+
+def randomfloat():
+  """
+   <Purpose>
+     Return a random number in the range [0.0, 1.0) using the
+     randombytes() function.
+     
+   <Arguments>
+     None
+    
+   <Exceptions>
+     None
+
+   <Side Effects>
+     This function generally results in one or more calls to
+     randombytes which uses a OS source of random data which is
+     metered.
+
+   <Returns>
+     A string of num_bytes random bytes suitable for cryptographic use.
+  """
+  
+  cache = CACHE['bytes']
+  num_bytes = 7
+  
+  # Make sure the cache has enough bytes to give...
+  while len(cache) < num_bytes:
+    cache += randombytes()
+    
+  # ...then take what we want.
+  randombytes_result = cache[:num_bytes]
+  CACHE['bytes'] = cache[num_bytes:]
+  
+  # Create a random integer.
+  randomint = 0L
+  for i in range(0, 7):
+    randomint = (randomint << 8) 
+    randomint = randomint + ord(randombytes_result[i]) 
+
+  # Trim off the excess bits to get 53bits.
+  randomint = randomint >> 3
+  
+  # randomint is a number between 0 and 2**(53) - 1
+  return randomint * (2**(-53))
+
+
+
+def random_randombytes(num_bytes, random_float=None):
+  """
+   <Purpose>
+     Return a string of length num_bytes, made of random bytes 
+     suitable for cryptographic use (because randomfloat draws
+     from a os provided random source).
+      
+     *WARNING* If python implements float as a C single precision
+     floating point number instead of a double precision then
+     there will not be 53 bits of data in the coefficient.
+
+   <Arguments>
+     num_bytes:
+               The number of bytes to request from os.urandom. 
+               Must be a positive integer value.
+     random_float:
+                  Should not be used, available only for testing
+                  so that predetermined floats can be provided.
+    
+   <Exceptions>
+     None
+
+   <Side Effects>
+     This function results in one or more calls to randomfloat 
+     which uses a OS source of random data which is metered.
+
+   <Returns>
+     A string of num_bytes random bytes suitable for cryptographic use.
+  """
+  # To ensure accurate testing, this allows the source
+  # of random floats to be supplied.
+  if random_float is None: 
+    random_float = randomfloat()
+  
+  randombytes = ''
+  
+  # num_bytes/6 + 1 is used because at most a single float
+  # can only result in 6 bytes of random data. So an additional
+  # 6 bytes is added and them trimmed to the desired size.
+  for byte in range(num_bytes/6 + 1):
+    
+    # Convert the float back to a integer by multiplying
+    # it by 2**53, 53 is used because the expected precision
+    # of a python float will be a C type double with a 53 bit 
+    # coefficient, this will still depend on the implementation
+    # but the standard is to expect 53 bits.
+    randomint = int(random_float * (2**53)) 
+    # 53 bits trimmed down to 48bits
+    # and 48bits is equal to 6 bytes
+    randomint = randomint >> 5  
+    
+    # Transform the randomint into a byte string, 6 bytes were
+    # used to create this integer, but several of the leading 
+    # bytes could have been trimmed off in the process.
+    sixbytes = _random_long_to_bytes(randomint)
+    
+    # Add on the zeroes that should be there.
+    if len(sixbytes) < 6: 
+      # pad additions binary zeroes that were lost during 
+      # the floats creation.
+      sixbytes = '\x00'*(6-len(sixbytes)) + sixbytes 
+    randombytes += sixbytes
+  
+  return randombytes[6 - num_bytes % 6:]
+
+
+  
+def _random_long_to_bytes(long_int):
+  """
+  <Purpose>
+    Convert a long integer to a byte string.   
+    Used by random_randombytes to convert integers recovered
+    from random floats into its byte representation.
+    Used by random_randombytes, random_randombytes is responsible
+    for padding any required binary zeroes that are lost in the
+    conversion process.     
+  """
+
+  long_int = long(long_int)
+  byte_string = ''
+  temp_int = 0
+  
+  # Special case to ensure that a non-empty string
+  # is always returned.
+  if long_int == 0:
+    return '\000'
+  
+  while long_int > 0:
+    # Use a bitwise AND to get the last 8 bits from the long.
+    #    long_int  -->   1010... 010000001 (base 2)
+    #    0xFF      -->            11111111
+    #              _______________________
+    #  Bitwise AND result -->     10000001
+    tmp_int = long_int & 0xFF
+    # Place the new character at the front of the string.
+    byte_string = "%s%s" % (chr(tmp_int), byte_string)
+    # Bitshift the long because the trailing 8 bits have just been read.
+    long_int = long_int >> 8
+      
+  return byte_string
+
+
+
+def random_nbit_int(num_bits):  
+  """
+  <Purpose>
+    Returns an random integer that was constructed with
+    num_bits many random bits. The result will be an
+    integer [0, 2**(num_bits) - 1] inclusive.
+     
+    For Example:
+     If a 10bit number is needed, random_nbit_int(10).
+     Min should be greater or equal to 0
+     Max should be less than or equal to 1023
+
+    TODO-
+      This function currently uses random_randombytes as a source 
+      of random bytes, this is not a permanent fix (the extraction 
+      of random bytes from the float is not portable). The change will
+      likely be made to random_randombytes (since calls os.urandom will
+      likely be restricted to a limited number of bytes).
+
+  <Arguments>
+    num_bits:
+             The number of random bits to be used for construction
+             of the random integer to be returned.
+
+  <Exceptions>
+    TypeError if non-integer values for num_bits.
+      Will accept floats of the type 1.0, 2.0, ...
+    
+    ValueError if the num_bits is negative or 0.
+
+  <Side Effects>
+    This function results in one or more calls to randomfloat 
+    which uses a OS source of random data which is metered.
+
+  <Returns>
+    Returns a random integer between [0, 2**(num_bits) - 1] inclusive.
+  
+  <Walkthrough of functions operation>
+    This will be a step by step walk through of the key operations
+    defined in this function, with the largest possible
+    10 bit integer returned.
+    
+    num_bits = 10
+    
+    randstring = random_randombytes(10/8)  for our example we
+    will suppose that the byte returned was '\xff' (which is the
+    same as chr(255)).
+    
+    odd_bits = 10 % 8 = 2
+    Once again we assume that random_randombytes(1) returns the
+    maximum possible, which is '\xff'  
+    chr = ord('\xff') >> (8 - odd_bits)
+    -> chr = 255 >> (8 - 2)
+    -> chr = 255 >> 6 = 3   Note 3 is the largest 2 bit number
+    chr(3) is appended to randstring resulting in
+    randstring = '\x03\xff' 
+    
+    value = 0
+    length = 2
+    
+    STEP 1 (i = 0):
+      value = value << 8 
+      -> value = 0
+      value = value + ord(randstring[0])
+      -> value = 3
+    
+    STEP 2 (i = 1):
+      value = value << 8
+      -> value = 768
+      value = value + ord(randstring[1])
+      -> value = 1023
+    
+    return 1023
+    This is the maximum possible 10 bit integer.
+  """
+  if num_bits <= 0:
+    raise ValueError('number of bits must be greater than zero')
+  if num_bits != int(num_bits):
+    raise TypeError('number of bits should be an integer')
+  
+  # The number of bits requested may not be a multiple of
+  # 8, then an additional byte will trimmed down.
+  randstring = random_randombytes(num_bits/8)
+
+  odd_bits = num_bits % 8
+  # A single random byte be converted to an integer (which will
+  # be an element of [0,255]) it will then be shifted to the required
+  # number of bits.
+  # Example: if odd_bits = 3, then the 8 bit retrieved from the 
+  # single byte will be shifted right by 5.
+  if odd_bits != 0:
+    char = ord(random_randombytes(1)) >> (8 - odd_bits)
+    randstring = chr(char) + randstring
+  
+  # the random bytes in randstring will be read from left to right
+  result = 0L
+  length = len(randstring)
+  for i in range(0, length):
+    # While result = 0, the bitshift left will still result in 0
+    # Since we are dealing with integers, this does not result
+    # in the loss of any information.
+    result = (result << 8) 
+    result = result + ord(randstring[i]) 
+  
+  assert(result < (2 ** num_bits))
+  assert(result >= 0)
+
+  return result
+
+
+
+def random_int_below(upper_bound):
+  """
+  <Purpose>
+    Returns an random integer in the range [0,upper_bound)
+    
+    Handles the case where upper_bound has more bits than returned
+    by a single call to the underlying generator.
+     
+    For Example:
+     For a 10bit number, random_int_below(10).
+     results would be an element in of the set 0,1,2,..,9.
+     
+    NOTE: This function is a port from the random.py file in 
+    python 2.6.2. For large numbers I have experienced inconsistencies
+    when using a naive logarithm function to determine the
+    size of a number in bits.  
+
+  <Arguments>
+    upper_bound:
+           The random integer returned will be in [0, upper_bound).
+           Results will be integers less than this argument.
+
+  <Exceptions>
+    TypeError if non-integer values for upper_bound.
+    ValueError if the upper_bound is negative or 0.
+
+  <Side Effects>
+    This function results in one or more calls to randomfloat 
+    which uses a OS source of random data which is metered.
+
+  <Returns>
+    Returns a random integer between [0, upper_bound).
+  
+  """
+  
+  try:
+    upper_bound = int(upper_bound)
+  except ValueError:
+    raise TypeError('number should be an integer')
+  
+  if upper_bound <= 0:
+    raise ValueError('number must be greater than zero')
+  
+    
+  # If upper_bound == 1, the math_log call will loop infinitely.
+  # The only int in [0, 1) is 0 anyway, so return 0 here.
+  # Resolves bug #927
+  if upper_bound == 1:
+    return 0
+  
+  k = int(1.00001 + math_log(upper_bound - 1, 2.0))   # 2**k > n-1 > 2**(k-2)
+  r = random_nbit_int(k)
+  while r >= upper_bound:
+    r = random_nbit_int(k)
+  return r
+
+ 
+
+def random_randrange(start, stop=None, step=1):
+  """
+  <Purpose>
+    Choose a random item from range(start, stop[, step]).
+    
+  <Arguments>
+    start:
+      The random integer returned will be greater than
+      or equal to start. 
+  
+    stop:
+      The random integer returned will be less than stop.
+      Results will be integers less than this argument.
+
+    step:
+      Determines which elements from the range will be considered.
+     
+  <Exceptions>
+    ValueError:
+      Non-integer for start or stop argument
+      Empty range, if start < 0 and stop is None
+      Empty range
+      Zero or non-integer step for range
+
+  <Side Effects>
+    This function results in one or more calls to randomfloat 
+    which uses a OS source of randomdata which is metered.
+  
+  <Returns>
+    Random item from (start, stop[, step]) 'exclusive'
+    
+  <Notes on port>
+    This fixes the problem with randint() which includes the
+    endpoint; in Python this is usually not what you want.
+    
+    Anthony -I removed these since they do not apply
+      int=int, default=None, maxwidth=1L<<BPF
+      Do not supply the 'int', 'default', and 'maxwidth' arguments.
+  """
+  maxwidth = 1L<<53
+
+  # This code is a bit messy to make it fast for the
+  # common case while still doing adequate error checking.
+  istart = int(start)
+  if istart != start:
+    raise ValueError, "non-integer arg 1 for randrange()"
+  if stop is None:
+    if istart > 0:
+      if istart >= maxwidth:
+        return random_int_below(istart)
+      return int(randomfloat() * istart)
+    raise ValueError, "empty range for randrange()"
+
+  # stop argument supplied.
+  istop = int(stop)
+  if istop != stop:
+    raise ValueError, "non-integer stop for randrange()"
+  width = istop - istart
+  if step == 1 and width > 0:
+    # Note that
+    #     int(istart + self.random()*width)
+    # instead would be incorrect.  For example, consider istart
+    # = -2 and istop = 0.  Then the guts would be in
+    # -2.0 to 0.0 exclusive on both ends (ignoring that random()
+    # might return 0.0), and because int() truncates toward 0, the
+    # final result would be -1 or 0 (instead of -2 or -1).
+    #     istart + int(self.random()*width)
+    # would also be incorrect, for a subtler reason:  the RHS
+    # can return a long, and then randrange() would also return
+    # a long, but we're supposed to return an int (for backward
+    # compatibility).
+
+    if width >= maxwidth:
+      return int(istart + random_int_below(width))
+    return int(istart + int(randomfloat()*width))
+  if step == 1:
+    raise ValueError, "empty range for randrange() (%d,%d, %d)" % (istart, istop, width)
+
+  # Non-unit step argument supplied.
+  istep = int(step)
+  if istep != step:
+    raise ValueError, "non-integer step for randrange()"
+  if istep > 0:
+    n = (width + istep - 1) // istep
+  elif istep < 0:
+    n = (width + istep + 1) // istep
+  else:
+    raise ValueError, "zero step for randrange()"
+
+  if n <= 0:
+    raise ValueError, "empty range for randrange()"
+
+  if n >= maxwidth:
+    return istart + istep*random_int_below(n)
+  return istart + istep*int(randomfloat() * n)
+
+
+
+def random_randint(lower_bound, upper_bound):
+  """
+  <Purpose>
+    Return random integer in range [lower_bound, upper_bound], 
+    including both end points.
+    
+  <Arguments>
+    upper_bound:
+      The random integer returned will be less than upper_bound.
+    lower_bound:
+      The random integer returned will be greater than
+      or equal to the lower_bound.
+
+  <Exceptions>
+    None
+
+  <Side Effects>
+    This function results in one or more calls to randomfloat 
+    which uses a OS source of randomdata which is metered.
+  
+  <Returns>
+    Random integer from [lower_bound, upper_bound] 'inclusive'  
+  """
+  return random_randrange(lower_bound, upper_bound+1)
+
+
+
+def random_sample(population, k):
+  """
+  <Purpose>
+    To return a list containing a random sample from the population.
+    
+  <Arguments>
+    population:
+               The elements to be sampled from.
+    k: 
+      The number of elements to sample
+      
+  <Exceptions>
+    ValueError is sampler larger than population.
+    
+  <Side Effects>
+    This function results in one or more calls to randomfloat 
+    which uses a OS source of randomdata which is metered.
+    
+  <Returns>
+    A list of len(k) with random elements from the population.
+    
+  """
+  
+  newpopulation = population[:]
+  if len(population) < k:
+    raise ValueError, "sample larger than population"
+
+  retlist = []
+  populationsize = len(population)-1
+
+  for num in range(k):
+    pos = random_randint(0,populationsize-num)
+    retlist.append(newpopulation[pos])
+    del newpopulation[pos]
+
+  return retlist
+
+
+def random_shuffle(x):
+  """Shuffle list x in place; return None.
+     This is a mostly direct port of Python 2.7.5's random.shuffle 
+     function, only that Repy doesn't allow reversed(), so I construct  
+     the required range ``reversed(xrange(1, len(x)))'' manually."""
+  for i in xrange(len(x)-1, 0, -1):
+    # pick an element in x[:i+1] with which to exchange x[i]
+    j = int(randomfloat() * (i+1))
+    x[i], x[j] = x[j], x[i]
+
+
+#end include random.r2py
+#begin include time.r2py
+"""
+<Program Name>
+  time.r2py
+
+<Author>
+  Eric Kimbrel
+
+<Started>
+  Jul 2, 2009
+
+<Purpose>
+ replaces the previous time.r2py by use of the active interface 
+ time_interface.r2py and the implementors ntp_time.r2py and tcp_time.r2py
+
+ see time_interface.r2py for details
+
+"""
+
+
+#begin include ntp_time.r2py
+"""
+   Author: Justin Cappos
+     Edited by Eric Kimbrel, this was originally time.r2py 
+
+   Start Date: 8 August 2008
+
+   Description:
+
+   This is an implementation of time_interface.r2py
+
+   This module handles getting the time from an external source, via UDP.
+   It gets the remote time once and then uses the offset from the local 
+   clock from then on
+   to return the current time.
+
+   To use this module, first make a call to time_updatetime(localport) with a
+   local UDP port that you have permission to send/recv on. This will
+   contact some random subset of NTP servers to get and store the local time.
+
+   Then, to get the actual time, call time_gettime() which will return
+   the current time (in seconds). time_gettime() can be called at any point
+   after having called time_updatetime(localport) since time_gettime() simply
+   calculates how much time has elapsed since the local time was originally 
+   acquired from one of the NTP servers.
+
+   Note that time_gettime() will raise TimeError if no NTP server responded or
+   if time_updatetime(localport) was never previously called.  If time_gettime()
+   fails, then time_updatetime(localport) can be called again to sample time
+   from another random set of NTP servers.
+"""
+
+
+#begin include time_interface.r2py
+"""
+<Program Name>
+  time_interface.r2py
+
+<Author>
+  Eric Kimbrel
+
+<Started>
+  Jul 2, 2009
+
+<Purpose>
+  Provide a framework to run any implementation of a ntp time service that
+  follows the interface provided here.
+
+  Any implementation must provide update method that takes a localport 
+  as an argument.
+
+  Implementers will set a mapping to their functions by calling 
+  time_register_method
+
+  USE:
+  
+  To use this module, first make a call to time_updatetime(localport),where
+  localport is a valid UDP port that you can send and receive on (note that
+  this port may not be used depending on the implementation.)
+
+  Then, to get the actual time, call time_gettime() which will return
+  the current time (in seconds).
+
+  time.r2py will attempt to use the update method of any impelemntor included.
+  If none are included or if they all fail an exception is thrown
+
+"""
+
+
+# dictionary for time implementers to store their information
+# the settime method is passed in for use by implementers
+TIME_IMP_DICT = {}
+
+time_query_times = []
+
+class TimeError(Exception):
+  pass
+
+
+def time_register_method(imp_name,update_method):
+  """
+  <Purpose>
+  Allow an implementation to register its update method with time.r2py
+
+  <Arguments>
+  imp_name, the name or unique abbreviation of the implementation
+  update_method, a time update_method
+  
+  <Exceptions>
+  None
+
+   <Returns>
+   None
+  """
+  TIME_IMP_DICT[imp_name] = update_method
+
+
+
+
+def time_updatetime(localport):
+  """
+   <Purpose>
+    Obtains and stores the local time from a subset of NTP servers.
+    Attempts to update the time with each implementation provided
+    until one succeeds or they all fail
+
+   <Arguments>
+    localport:
+             The local port that MAY be used when contacting the NTP server(s).
+             Consider this port a hint and not a rule.
+   
+   <Exceptions>
+    Exception occurs when all methods fail to updatetime, or no such methods 
+    are provided (no mehtods have registered)
+
+   <Side Effects>
+    time_settime(currenttime) is called as the sub process of a sub process,
+    which adjusts the current time.
+
+   <Returns>
+    None.
+  """
+  exception_list = []
+  # try the 'update' function for each implementation, storing exceptions in
+  # case of total failure, and exiting the function when any of the 'update'
+  # functions succeed.
+  for implementation_name, update_function in TIME_IMP_DICT.items():
+    try:
+      update_function(localport)
+    except Exception, e:
+      exception_list.append((implementation_name, type(e), str(e)))
+    else:
+      # Exit when we succeed.
+      # Be warned that any error messages are suppressed!
+      return
+  else:
+    raise TimeError("time_updatetime called before time_register_method!")
+
+  # we failed
+  raise TimeError('Error(s) in time_updatetime: ' + str(exception_list))
+
+
+
+
+
+def time_settime(currenttime):
+  """
+   <Purpose>
+    Sets a remote time as the current time.
+
+   <Arguments>
+    currenttime:
+               The remote time to be set as the current time.
+
+   <Exceptions>
+    None.
+
+   <Side Effects>
+    Adjusts the current time.
+
+   <Returns>
+    None.
+  """
+
+  time_query_times.append((getruntime(), currenttime))
+
+
+
+
+
+
+def time_gettime():
+  """
+   <Purpose>
+    Gives the current time in seconds by calculating how much time has elapsed
+    since the local time was obtained from an NTP server via the
+    time_updatetime(localport) function.
+
+   <Arguments>
+    None.
+
+   <Exceptions>
+    TimeError when time_updatetime(localport)has not previously been called or 
+    when time_updatetime(localport) has any unresolved TimeError exceptions.
+
+   <Side Effects>
+    None.
+
+   <Returns>
+    Current time in seconds.
+  """
+
+  if time_query_times == []:
+    raise TimeError("Error from time_gettime(): time has not been set yet!")
+
+  # otherwise use the most recent data...
+  latest_update = time_query_times[-1]
+
+  # first item is the getruntime(), second is NTP time...
+  elapsedtimesinceupdate = getruntime() - latest_update[0]
+
+  return latest_update[1] + elapsedtimesinceupdate
+
+
+
+def time_getunixtime():
+  """
+   <Purpose>
+    Gives the current time since 1970-01-01 (``The Epoch''), 
+    i.e. Unix time. The returned timestamp can be parsed by 
+    utilities like date, e.g.
+
+    date -d @THETIMESTAMP  # Linux
+    date -r THETIMESTAMP  # the BSDs, Mac OS X
+
+   <Arguments>
+    None.
+
+   <Exceptions>
+    As with time_gettime()
+
+   <Side Effects>
+    None.
+
+   <Returns>
+    Current Unix time in seconds.
+  """
+  return time_gettime() - time_seconds_from_1900_to_1970
+
+
+
+
+# in case you want to change to time since the 1970 (as is common)
+time_seconds_from_1900_to_1970 = 2208988800
+
+#end include time_interface.r2py
+
+# Use for random sampling...
+#begin include random.r2py
+#already included random.r2py
+#end include random.r2py
+
+
+
+
+
+
+
+#BUG: Do I need to compensate for the time taken to contact the time server?    (#353)
+def ntp_time_updatetime(localport):
+  """
+   <Purpose>
+    Obtains and stores the local time from a subset of NTP servers.
+
+   <Arguments>
+    localport:
+             The local port to be used when contacting the NTP server(s).
+
+   <Exceptions>
+    TimeError when getmyip() fails or one of the subset of NTP servers will not
+    respond.
+
+   <Side Effects>
+    time_interface.time_settime(currenttime) is called as the subprocess of a subprocess, which
+    adjusts the current time.
+
+   <Returns>
+    None.
+  """
+
+  ip = getmyip()
+
+  timeservers = ["time-a.nist.gov", "time-b.nist.gov", "time-a.timefreq.bldrdoc.gov", "time-b.timefreq.bldrdoc.gov", "time-c.timefreq.bldrdoc.gov", "utcnist.colorado.edu", "time.nist.gov", "nist1.symmetricom.com", "nist.netservicesgroup.com"]
+
+  socketobj = listenformessage(ip, localport)
+
+  # always close the handle before returning...
+  try: 
+    # try five random servers, and send requests to all of the servers and 
+    # then wait for a response from any server for atmost 5 seconds. This way
+    # the total wait time is reduced to 5 seconds, since any one of the server's
+    # is guaranteed to give a response.
+    for servername in random_sample(timeservers,5):
+
+      # this sends a request, version 3 in "client mode"
+      ntp_request_string = chr(27)+chr(0)*47
+      try:
+        sendmessage(gethostbyname(servername), 123, ntp_request_string,\
+          ip, localport) # 123 is the NTP port
+      except NetworkAddressError:
+        # gethostbyname couldn't resolve servername, try with next name
+        pass
+
+    # Wait for 5 seconds to get a response from any of the 5 servers that was
+    # requested above.
+    starttime = getruntime()
+    responsetime = 5.0
+
+    while (getruntime() - starttime) < responsetime:
+      try:
+        (remoteip, remoteport, mess) = socketobj.getmessage()
+      except SocketWouldBlockError:
+        sleep(0.05) # Retry amount time...
+      else:
+        # XXX Check for matching address/port, #1268
+        time_settime(_time_convert_timestamp_to_float(mess[40:48]))
+        return
+    
+  finally:
+    socketobj.close()
+
+  # Failure, tried servers without luck...
+  raise TimeError, "Time Server update failed.  Perhaps retry later..."
+
+
+
+### Do the conversion / decoding for NTP.   More details about the 
+### format of NTP are at RFC 2030 (http://www.ietf.org/rfc/rfc2030.txt)
+
+# this unpacks the data from the packet and changes it to a float
+def _time_convert_timestamp_to_float(timestamp):
+  integerpart = (ord(timestamp[0])<<24) + (ord(timestamp[1])<<16) + (ord(timestamp[2])<<8) + (ord(timestamp[3]))
+  floatpart = (ord(timestamp[4])<<24) + (ord(timestamp[5])<<16) + (ord(timestamp[6])<<8) + (ord(timestamp[7]))
+  return integerpart + floatpart / float(2**32)
+
+
+#register the update method
+time_register_method('ntp',ntp_time_updatetime)
+
+#end include ntp_time.r2py
+#begin include tcp_time.r2py
+"""
+  Author: Zachary Boka
+    tcp_time.r2py
+
+  Start Date:
+    3 May 2009
+    Amended 5 July, 2009 to be an extension to time.r2py
+
+  Description:
+
+    This module is an implementation of time_interface.r2py
+
+    Contacts a server running time_server.r2py to get the current time from an
+    NTP because only the server can communicate with an NTP.
+
+    To use this module, make one call to time_updatetime() to get the
+    time from the server.  This function also implicitly sets the time.  Then
+    call time_gettime() every time the current time is needed.
+
+"""
+
+#begin include time_interface.r2py
+#already included time_interface.r2py
+#end include time_interface.r2py
+
+#begin include advertise.r2py
+"""
+<Program Name>
+  advertise.r2py
+
+<Started>
+  October 14, 2008
+
+<Author>
+  Justin Cappos
+
+<Purpose>
+  Module which allows clients to send advertise queries to various servers.
+"""
+
+#listops = dy_import_module("listops.r2py")
+#centralizedadvertise = dy_import_module("centralizedadvertise.r2py")
+#centralizedadvertise_v2 = dy_import_module("centralizedadvertise_v2.r2py")
+#parallelize = dy_import_module("parallelize.r2py")
+#udp_centralizedadvertise = dy_import_module("udpcentralizedadvertise.r2py")
+#begin include listops.r2py
+""" 
+Author: Justin Cappos
+
+Module: A simple library of list commands that allow the programmer
+        to do list composition operations
+
+Start date: November 11th, 2008
+
+This is a really simple module, only broken out to avoid duplicating 
+functionality.
+
+This was adopted from previous code in seash.   
+
+I really should be using sets instead I think.   These are merely for 
+convenience when you already have lists.
+
+"""
+
+
+def listops_difference(list_a,list_b):
+  """
+   <Purpose>
+      Return a list that has all of the items in list_a that are not in list_b
+      Duplicates are removed from the output list
+
+   <Arguments>
+      list_a, list_b:
+        The lists to operate on
+
+   <Exceptions>
+      TypeError if list_a or list_b is not a list.
+
+   <Side Effects>
+      None.
+
+   <Returns>
+      A list containing list_a - list_b
+  """
+
+  retlist = []
+  for item in list_a:
+    if item not in list_b:
+      retlist.append(item)
+
+  # ensure that a duplicated item in list_a is only listed once
+  return listops_uniq(retlist)
+
+
+def listops_union(list_a,list_b):
+  """
+   <Purpose>
+      Return a list that has all of the items in list_a or in list_b.   
+      Duplicates are removed from the output list
+
+   <Arguments>
+      list_a, list_b:
+        The lists to operate on
+
+   <Exceptions>
+      TypeError if list_a or list_b is not a list.
+
+   <Side Effects>
+      None.
+
+   <Returns>
+      A list containing list_a union list_b
+  """
+
+  retlist = list_a[:]
+  for item in list_b: 
+    if item not in list_a:
+      retlist.append(item)
+
+  # ensure that a duplicated item in list_a is only listed once
+  return listops_uniq(retlist)
+
+
+def listops_intersect(list_a,list_b):
+  """
+   <Purpose>
+      Return a list that has all of the items in both list_a and list_b.   
+      Duplicates are removed from the output list
+
+   <Arguments>
+      list_a, list_b:
+        The lists to operate on
+
+   <Exceptions>
+      TypeError if list_a or list_b is not a list.
+
+   <Side Effects>
+      None.
+
+   <Returns>
+      A list containing list_a intersect list_b
+  """
+
+  retlist = []
+  for item in list_a:
+    if item in list_b:
+      retlist.append(item)
+
+  # ensure that a duplicated item in list_a is only listed once
+  return listops_uniq(retlist)
+      
+
+def listops_uniq(list_a):
+  """
+   <Purpose>
+      Return a list that has no duplicate items
+
+   <Arguments>
+      list_a
+        The list to operate on
+
+   <Exceptions>
+      TypeError if list_a is not a list.
+
+   <Side Effects>
+      None.
+
+   <Returns>
+      A list containing the unique items in list_a
+  """
+  retlist = []
+  for item in list_a:
+    if item not in retlist:
+      retlist.append(item)
+
+  return retlist
+
+
+
+#end include listops.r2py
+#begin include centralizedadvertise.r2py
+""" 
+Author: Justin Cappos
+
+Start Date: July 8, 2008
+
+Description:
+Advertisements to a central server (similar to openDHT)
+
+
+"""
+
+#begin include session.r2py
+# This module wraps communications in a signaling protocol.   The purpose is to
+# overlay a connection-based protocol with explicit message signaling.   
+#
+# The protocol is to send the size of the message followed by \n and then the
+# message itself.   The size of a message must be able to be stored in 
+# sessionmaxdigits.   A size of -1 indicates that this side of the connection
+# should be considered closed.
+#
+# Note that the client will block while sending a message, and the receiver 
+# will block while recieving a message.   
+#
+# While it should be possible to reuse the connectionbased socket for other 
+# tasks so long as it does not overlap with the time periods when messages are 
+# being sent, this is inadvisable.
+
+class SessionEOF(Exception):
+  pass
+
+sessionmaxdigits = 20
+
+# get the next message off of the socket...
+def session_recvmessage(socketobj):
+
+  messagesizestring = ''
+  # first, read the number of characters...
+  for junkcount in range(sessionmaxdigits):
+    while True:
+      try:
+        currentbyte = socketobj.recv(1)
+	break
+      except SocketWouldBlockError:
+        sleep(0.01)
+
+    if currentbyte == '\n':
+      break
+    
+    # not a valid digit
+    if currentbyte not in '0123456789' and messagesizestring != '' and currentbyte != '-':
+      raise ValueError, "Incorrect value in message size header. Found character '%s' in the header." % str(currentbyte)
+     
+    messagesizestring = messagesizestring + currentbyte
+
+  else:
+    # too large
+    raise ValueError, "The header message size exceeds the maximum limit of %d." % sessionmaxdigits
+
+  try:
+    messagesize = int(messagesizestring)
+  except ValueError:
+    raise ValueError, "Unable to convert the message size '%s' to int." % messagesizestring
+  
+  # nothing to read...
+  if messagesize == 0:
+    return ''
+
+  # end of messages
+  if messagesize == -1:
+    raise SessionEOF, "Connection Closed. Received a messagesize of -1"
+
+  if messagesize < 0:
+    raise ValueError, "Received a negative message size '%d'" % messagesize
+
+  data = ''
+  while len(data) < messagesize:
+    try:
+      chunk =  socketobj.recv(messagesize-len(data))
+      if chunk == '': 
+        raise SessionEOF, "Received an empty string when performing socketobj.recv(). Socket possibly closed."
+      data = data + chunk
+    except SocketWouldBlockError:
+      sleep(0.01)
+
+  return data
+
+# a private helper function
+def session_sendhelper(socketobj,data):
+  sentlength = 0
+  # if I'm still missing some, continue to send (I could have used sendall
+  # instead but this isn't supported in repy currently)
+  while sentlength < len(data):
+    try:
+      thissent = socketobj.send(data[sentlength:])
+      sentlength = sentlength + thissent
+    except SocketWouldBlockError:
+      sleep(0.01)
+
+
+# send the message 
+def session_sendmessage(socketobj,data):
+  header = str(len(data)) + '\n'
+  # Sending these piecemeal does not accomplish anything, and can contribute 
+  # to timeout issues when run by constantly overloaded machines.
+  # session_sendhelper(socketobj,header)
+
+  # Concatenate the header and data, rather than sending both separately.
+  complete_packet = header + data
+
+  # session_sendhelper(socketobj,data)
+
+  session_sendhelper(socketobj, complete_packet)
+
+
+#end include session.r2py
+# I'll use socket timeout to prevent hanging when it takes a long time...
+#begin include sockettimeout.r2py
+"""
+<Author>
+  Justin Cappos, Armon Dadgar
+  This is a rewrite of the previous version by Richard Jordan
+
+<Start Date>
+  26 Aug 2009
+
+<Description>
+  A library that causes sockets to timeout if a recv / send call would
+  block for more than an allotted amount of time.
+
+"""
+#begin include random.r2py
+#already included random.r2py
+#end include random.r2py
+
+class SocketTimeoutError(Exception):
+  """The socket timed out before receiving a response"""
+
+
+class timeout_socket():
+  """
+  <Purpose>
+    Provides a socket like object which supports custom timeouts
+    for send() and recv().
+  """
+
+  # Initialize with the socket object and a default timeout
+  def __init__(self,socket,timeout=10, checkintv=0.1):
+    """
+    <Purpose>
+      Initializes a timeout socket object.
+
+    <Arguments>
+      socket:
+              A socket like object to wrap. Must support send,recv,close.
+
+      timeout:
+              The default timeout for send() and recv().
+
+      checkintv:
+              How often socket operations (send,recv) should check if
+              they can run. The smaller the interval the more time is
+              spent busy waiting.
+    """
+    # Store the socket, timeout and check interval
+    self.socket = socket
+    self.timeout = timeout
+    self.checkintv = checkintv
+
+
+  # Allow changing the default timeout
+  def settimeout(self,timeout=10):
+    """
+    <Purpose>
+      Allows changing the default timeout interval.
+
+    <Arguments>
+      timeout:
+              The new default timeout interval. Defaults to 10.
+              Use 0 for no timeout. Given in seconds.
+
+    """
+    # Update
+    self.timeout = timeout
+  
+  
+  # Wrap close
+  def close(self):
+    """
+    See socket.close()
+    """
+    return self.socket.close()
+
+
+  # Provide a recv() implementation
+  def recv(self,bytes,timeout=None):
+    """
+    <Purpose>
+      Allows receiving data from the socket object with a custom timeout.
+
+    <Arguments>
+      bytes:
+          The maximum amount of bytes to read
+
+      timeout:
+          (Optional) Defaults to the value given at initialization, or by settimeout.
+          If provided, the socket operation will timeout after this amount of time (sec).
+          Use 0 for no timeout.
+
+    <Exceptions>
+      As with socket.recv(), socket.willblock(). Additionally, SocketTimeoutError is
+      raised if the operation times out.
+
+    <Returns>
+      The data received from the socket.
+    """
+    # Set the timeout if None
+    if timeout is None:
+      timeout = self.timeout
+
+    # Get the start time
+    starttime = getruntime()
+
+    elapsed_time = 0
+
+    while elapsed_time < timeout:
+      try:
+        data = self.socket.recv(bytes)
+      except SocketWouldBlockError:
+        sleep(self.checkintv)
+        elapsed_time = getruntime() - starttime
+      else:
+        break
+    else:
+      raise SocketTimeoutError, "recv() timed out!!"
+
+    return data
+
+
+  # Provide a send() implementation
+  def send(self,data,timeout=None):
+    """
+    <Purpose>
+      Allows sending data with the socket object with a custom timeout.
+
+    <Arguments>
+      data:
+          The data to send
+
+      timeout:
+          (Optional) Defaults to the value given at initialization, or by settimeout.
+          If provided, the socket operation will timeout after this amount of time (sec).
+          Use 0 for no timeout.
+
+    <Exceptions>
+      As with socket.send(), socket.willblock(). Additionally, SocketTimeoutError is
+      raised if the operation times out.
+
+    <Returns>
+      The number of bytes sent.
+    """
+    # Set the timeout if None
+    if timeout is None:
+      timeout = self.timeout
+
+    # Get the start time
+    starttime = getruntime()
+
+    elapsed_time = 0
+
+    while elapsed_time < timeout:
+      try:
+        sentbytes = self.socket.send(data)
+      except SocketWouldBlockError:
+        sleep(self.checkintv)
+        elapsed_time = getruntime() - starttime
+      else:
+        break
+    else:
+      raise SocketTimeoutError, "send() timed out!!"
+
+    return sentbytes
+
+
+# Wrapper class for TCPServerSocket in emulcomm
+class timeout_server_socket():
+  """
+  <Purpose>
+    Provides a TCPSeverSocket like object which supports custom timeouts
+    for getconnection().
+  """
+
+  def __init__(self, socket,timeout=10, checkintv=0.1):
+    """
+    <Purpose>
+      Initializes a timeout TCPServerSocket object.
+
+    <Arguments>
+      socket:
+              A socket like object to wrap. Must support getconnection, close.
+
+      timeout:
+              The default timeout for getconnection().
+
+      checkintv:
+              How often socket operations (getconnection) should check if
+              they can run. The smaller the interval the more time is
+              spent busy waiting.
+    """
+    self.socket = socket
+    self.timeout = timeout
+    self.checkintv = checkintv
+
+  # Allow changing the default timeout
+  def settimeout(self,timeout=10):
+    """
+    <Purpose>
+      Allows changing the default timeout interval.
+
+    <Arguments>
+      timeout:
+              The new default timeout interval. Defaults to 10.
+              Use 0 for no timeout. Given in seconds.
+
+    """
+    # Update
+    self.timeout = timeout
+
+  def getconnection(self, timeout=None):
+    """
+    <Purpose>
+      Allows accecpting new connection on TCPSeverSocket object with a custom 
+      timeout.
+
+    <Arguments>
+      timeout:
+          (Optional) Defaults to the value given at initialization, or by settimeout.
+          If provided, the socket operation will timeout after this amount of time (sec).
+          Use 0 for no timeout.
+
+    <Exceptions>
+      As with TCPSeverSocket.getconnection(). Additionally, SocketTimeoutError 
+      is raised if the operation times out.
+
+    <Returns>
+      A 3-tuple consisting of remoteip, remoteport and client socket.
+    """
+
+    # Set the timeout if None
+    if timeout is None:
+      timeout = self.timeout
+
+    # Get the start time.
+    starttime = getruntime()
+
+    elapsed_time = 0
+
+    while elapsed_time < timeout:
+      try:
+        remoteip, remoteport, realsocketlikeobject = self.socket.getconnection()
+      except SocketWouldBlockError:
+        sleep(self.checkintv)
+        elapsed_time = getruntime() - starttime
+      else:
+        break
+    else:
+      raise SocketTimeoutError, "getconnection() timed out!"
+
+    thissocketlikeobject = timeout_socket(realsocketlikeobject, timeout)
+    return (remoteip, remoteport, thissocketlikeobject)
+
+  # Wrap close
+  def close(self):
+    """
+    See socket.close()
+    """
+    self.socket.close()
+
+    
+
+
+def timeout_openconnection(desthost, destport, localip=None, localport=None, timeout=5):
+  """
+  <Purpose> 
+    Wrapper for openconnection.   Very, very similar
+
+  <Args>
+    Similar to Repy's openconnection, but will try to automatically come 
+    up with localip and localport if omitted.
+
+  <Exception>
+    Raises the same exceptions as openconnection.
+
+  <Side Effects>
+    Creates a socket object for the user
+
+  <Returns>
+    socket obj on success
+  """
+  # Initialize localip and localport (if not set by caller)
+  if localip is None:
+    localip = getmyip()
+
+  if localport is None:
+    # Get the ports available to our vessel (#1375)
+    # (I'll try all of the nominally available ports, not only 
+    # the ones that are currently unused, because port usage might 
+    # change while we still set up things here.)
+    available_resources, ignore, ignore = getresources()
+    portrange = list(available_resources['connport'])
+    # Shuffle the portrange to make it unlikely we ever reuse the 
+    # same quintuple twice in a row (#1362)
+    random_shuffle(portrange)
+  else:
+    portrange = [localport]
+
+  for myport in portrange:
+    try:
+      realsocketlikeobject = openconnection(desthost, destport, localip, myport, timeout)
+      # Heureka, we found a usable port. Continue outside of the for loop.
+      break
+    except (DuplicateTupleError, CleanupInProgressError, 
+      AlreadyListeningError, AddressBindingError):
+      # These are "legitimate" in the sense that there is something 
+      # in our very program already using the port we just tried.
+      pass
+    except ResourceForbiddenError:
+      # The port is not in the restrictions file. This can only 
+      # happen if the user supplied us with the ``localport'' argument.
+      raise
+    except Exception:
+      # E.g. RepyArgumentError due to using a FQDN instead of an 
+      # IP address argument -- the user's fault, really.
+      raise
+  else:
+    # Checked the whole port range without success
+    raise AddressBindingError, "Could not find any usable source port in the range " + str(portrange) + " on IP address " + str(localip) + "."
+
+
+  thissocketlikeobject = timeout_socket(realsocketlikeobject, timeout)
+  return thissocketlikeobject
+
+
+
+
+
+def timeout_listenforconnection(localip, localport, timeout=5):
+  """
+  <Purpose> 
+    Wrapper for waitforconn.   Essentially does the same thing...
+
+  <Args>
+    Same as Repy waitforconn with the addition of a timeout argument.
+
+  <Exceptions> 
+    Same as Repy waitforconn
+
+  <Side Effects>
+    Sets up event listener which calls function on messages.
+
+  <Returns>
+    Handle to listener.
+  """
+
+  realsocketlikeobject = listenforconnection(localip, localport)
+
+  thissocketlikeobject = timeout_server_socket(realsocketlikeobject, timeout)
+  return thissocketlikeobject
+  
+    
+
+
+#end include sockettimeout.r2py
+#begin include serialize.r2py
+"""
+Author: Justin Cappos
+
+
+Start date: October 9th, 2009
+
+Purpose: A simple library that serializes and deserializes built-in repy types.
+This includes strings, integers, floats, booleans, None, complex, tuples, 
+lists, sets, frozensets, and dictionaries.
+
+There are no plans for including objects.
+
+Note: that all items are treated as separate references.   This means things
+like 'a = []; a.append(a)' will result in an infinite loop.   If you have
+'b = []; c = (b,b)' then 'c[0] is c[1]' is True.   After deserialization 
+'c[0] is c[1]' is False.
+
+I can add support or detection of this if desired.
+"""
+
+# The basic idea is simple.   Say the type (a character) followed by the 
+# type specific data.    This is adequate for simple types
+# that do not contain other types.   Types that contain other types, have
+# a length indicator and then the underlying items listed sequentially.   
+# For a dict, this is key1value1key2value2.
+
+
+
+def serialize_serializedata(data):
+  """
+   <Purpose>
+      Convert a data item of any type into a string such that we can 
+      deserialize it later.
+
+   <Arguments>
+      data: the thing to seriailize.   Can be of essentially any type except
+            objects.
+
+   <Exceptions>
+      TypeError if the type of 'data' isn't allowed
+
+   <Side Effects>
+      None.
+
+   <Returns>
+      A string suitable for deserialization.
+  """
+
+  # this is essentially one huge case statement...
+
+  # None
+  if type(data) == type(None):
+    return 'N'
+
+  # Boolean
+  elif type(data) == type(True):
+    if data == True:
+      return 'BT'
+    else:
+      return 'BF'
+
+  # Integer / Long
+  elif type(data) is int or type(data) is long:
+    datastr = str(data) 
+    return 'I'+datastr
+
+
+  # Float
+  elif type(data) is float:
+    datastr = str(data) 
+    return 'F'+datastr
+
+
+  # Complex
+  elif type(data) is complex:
+    datastr = str(data) 
+    if datastr[0] == '(' and datastr[-1] == ')':
+      datastr = datastr[1:-1]
+    return 'C'+datastr
+
+
+
+  # String
+  elif type(data) is str:
+    return 'S'+data
+
+
+  # List or tuple or set or frozenset
+  elif type(data) is list or type(data) is tuple or type(data) is set or type(data) is frozenset:
+    # the only impact is the first letter...
+    if type(data) is list:
+      mystr = 'L'
+    elif type(data) is tuple:
+      mystr = 'T'
+    elif type(data) is set:
+      mystr = 's'
+    elif type(data) is frozenset:
+      mystr = 'f'
+    else:
+      raise Exception("InternalError: not a known type after checking")
+
+    for item in data:
+      thisitem = serialize_serializedata(item)
+      # Append the length of the item, plus ':', plus the item.   1 -> '2:I1'
+      mystr = mystr + str(len(thisitem))+":"+thisitem
+
+    mystr = mystr + '0:'
+
+    return mystr
+
+
+  # dict
+  elif type(data) is dict:
+    mystr = 'D'
+
+    keysstr = serialize_serializedata(data.keys())
+    # Append the length of the list, plus ':', plus the list.  
+    mystr = mystr + str(len(keysstr))+":"+keysstr
+    
+    # just plop the values on the end.
+    valuestr = serialize_serializedata(data.values())
+    mystr = mystr + valuestr
+
+    return mystr
+
+
+  # Unknown!!!
+  else:
+    raise TypeError("Unknown type '"+str(type(data))+"' for data :"+str(data))
+
+
+
+def serialize_deserializedata(datastr):
+  """
+   <Purpose>
+      Convert a serialized data string back into its original types.
+
+   <Arguments>
+      datastr: the string to deseriailize.
+
+   <Exceptions>
+      ValueError if the string is corrupted
+      TypeError if the type of 'data' isn't allowed
+
+   <Side Effects>
+      None.
+
+   <Returns>
+      Items of the original type
+  """
+
+  if type(datastr) != str:
+    raise TypeError("Cannot deserialize non-string of type '"+str(type(datastr))+"'")
+  typeindicator = datastr[0]
+  restofstring = datastr[1:]
+
+  # this is essentially one huge case statement...
+
+  # None
+  if typeindicator == 'N':
+    if restofstring != '':
+      raise ValueError("Malformed None string '"+restofstring+"'")
+    return None
+
+  # Boolean
+  elif typeindicator == 'B':
+    if restofstring == 'T':
+      return True
+    elif restofstring == 'F':
+      return False
+    raise ValueError("Malformed Boolean string '"+restofstring+"'")
+
+  # Integer / Long
+  elif typeindicator == 'I':
+    try:
+      return int(restofstring) 
+    except ValueError:
+      raise ValueError("Malformed Integer string '"+restofstring+"'")
+
+
+  # Float
+  elif typeindicator == 'F':
+    try:
+      return float(restofstring) 
+    except ValueError:
+      raise ValueError("Malformed Float string '"+restofstring+"'")
+
+  # Float
+  elif typeindicator == 'C':
+    try:
+      return complex(restofstring) 
+    except ValueError:
+      raise ValueError("Malformed Complex string '"+restofstring+"'")
+
+
+
+  # String
+  elif typeindicator == 'S':
+    return restofstring
+
+  # List / Tuple / set / frozenset / dict
+  elif typeindicator == 'L' or typeindicator == 'T' or typeindicator == 's' or typeindicator == 'f':
+    # We'll split this and keep adding items to the list.   At the end, we'll
+    # convert it to the right type
+
+    thislist = []
+
+    data = restofstring
+    # We'll use '0:' as our 'end separator'
+    while data != '0:':
+      lengthstr, restofdata = data.split(':', 1)
+      length = int(lengthstr)
+
+      # get this item, convert to a string, append to the list.
+      thisitemdata = restofdata[:length]
+      thisitem = serialize_deserializedata(thisitemdata)
+      thislist.append(thisitem)
+
+      # Now toss away the part we parsed.
+      data = restofdata[length:]
+
+    if typeindicator == 'L':
+      return thislist
+    elif typeindicator == 'T':
+      return tuple(thislist)
+    elif typeindicator == 's':
+      return set(thislist)
+    elif typeindicator == 'f':
+      return frozenset(thislist)
+    else:
+      raise Exception("InternalError: not a known type after checking")
+
+
+  elif typeindicator == 'D':
+
+    lengthstr, restofdata = restofstring.split(':', 1)
+    length = int(lengthstr)
+
+    # get this item, convert to a string, append to the list.
+    keysdata = restofdata[:length]
+    keys = serialize_deserializedata(keysdata)
+
+    # The rest should be the values list.
+    values = serialize_deserializedata(restofdata[length:])
+
+    if type(keys) != list or type(values) != list or len(keys) != len(values):
+      raise ValueError("Malformed Dict string '"+restofstring+"'")
+    
+    thisdict = {}
+    for position in xrange(len(keys)):
+      thisdict[keys[position]] = values[position]
+    
+    return thisdict
+
+
+
+
+  # Unknown!!!
+  else:
+    raise ValueError("Unknown typeindicator '"+str(typeindicator)+"' for data :"+str(restofstring))
+
+
+
+
+#end include serialize.r2py
+
+
+# Hmm, perhaps I should make an initialization call instead of hardcoding this?
+# I suppose it doesn't matter since one can always override these values
+servername = "advertiseserver.poly.edu"
+# This port is updated to use the new port (legacy port is 10101)
+serverport = 10102
+
+
+
+class CentralAdvertiseError(Exception):
+  """Error when advertising a value to the central advertise service."""
+
+def centralizedadvertise_announce(key, value, ttlval):
+  """
+   <Purpose>
+     Announce a key / value pair into the CHT.
+
+   <Arguments>
+     key: the key to put the value under. This will be converted to a string.
+
+     value: the value to store at the key. This is also converted to a string.
+
+     ttlval: the amount of time until the value expires.   Must be an integer
+
+   <Exceptions>
+     TypeError if ttlval is of the wrong type.
+
+     ValueError if ttlval is not positive 
+
+     CentralAdvertiseError is raised the server response is corrupted
+
+     Various network and timeout exceptions are raised by timeout_openconn
+     and session_sendmessage / session_recvmessage
+
+   <Side Effects>
+     The CHT will store the key / value pair.
+
+   <Returns>
+     None
+  """
+  # do basic argument checking / munging
+  key = str(key)
+  value = str(value)
+
+  if not type(ttlval) is int and not type(ttlval) is long:
+    raise TypeError("Invalid type '"+str(type(ttlval))+"' for ttlval.")
+
+  if ttlval < 1:
+    raise ValueError("The argument ttlval must be positive, not '"+str(ttlval)+"'")
+
+  
+  # build the tuple to send, then convert to a string because only strings
+  # (bytes) can be transmitted over the network...
+  datatosend = ('PUT',key,value,ttlval)
+  datastringtosend = serialize_serializedata(datatosend)
+
+  
+  # send the data over a timeout socket using the session library, then
+  # get a response from the server.
+  sockobj = timeout_openconnection(gethostbyname(servername), serverport, 
+    timeout=10)
+  try:
+    session_sendmessage(sockobj, datastringtosend)
+    rawresponse = session_recvmessage(sockobj)
+  finally:
+    # BUG: This raises an error right now if the call times out ( #260 )
+    # This isn't a big problem, but it is the "wrong" exception
+    sockobj.close()
+  
+  # We should check that the response is 'OK'
+  try:
+    response = serialize_deserializedata(rawresponse)
+    if response != 'OK':
+      raise CentralAdvertiseError("Centralized announce failed with '"+response+"'")
+  except ValueError, e:
+    raise CentralAdvertiseError("Received unknown response from server '"+rawresponse+"'")
+      
+
+
+
+def centralizedadvertise_lookup(key, maxvals=100):
+  """
+   <Purpose>
+     Returns a list of valid values stored under a key
+
+   <Arguments>
+     key: the key to put the value under. This will be converted to a string.
+
+     maxvals: the maximum number of values to return.   Must be an integer
+
+   <Exceptions>
+     TypeError if maxvals is of the wrong type.
+
+     ValueError if maxvals is not a positive number
+
+     CentralAdvertiseError is raised the server response is corrupted
+
+     Various network and timeout exceptions are raised by timeout_openconn
+     and session_sendmessage / session_recvmessage
+
+   <Side Effects>
+     None
+
+   <Returns>
+     The list of values
+  """
+
+  # do basic argument checking / munging
+  key = str(key)
+
+  if not type(maxvals) is int and not type(maxvals) is long:
+    raise TypeError("Invalid type '"+str(type(maxvals))+"' for ttlval.")
+
+  if maxvals < 1:
+    raise ValueError("The argument ttlval must be positive, not '"+str(ttlval)+"'")
+
+  # build the tuple to send, then convert to a string because only strings
+  # (bytes) can be transmitted over the network...
+  messagetosend = ('GET',key,maxvals)
+  messagestringtosend = serialize_serializedata(messagetosend)
+
+  # send the data over a timeout socket using the session library, then
+  # get a response from the server.
+  sockobj = timeout_openconnection(gethostbyname(servername), serverport, 
+    timeout=10)
+  try:
+    session_sendmessage(sockobj, messagestringtosend)
+    rawreceiveddata = session_recvmessage(sockobj)
+  finally:
+    # BUG: This raises an error right now if the call times out ( #260 )
+    # This isn't a big problem, but it is the "wrong" exception
+    sockobj.close()
+
+
+  try:
+    responsetuple = serialize_deserializedata(rawreceiveddata)
+  except ValueError, e:
+    raise CentralAdvertiseError("Received unknown response from server '"+rawresponse+"'")
+
+  # For a set of values, 'a','b','c',  I should see the response: 
+  # ('OK', ['a','b','c'])    Anything else is WRONG!!!
+  
+  if not type(responsetuple) is tuple:
+    raise CentralAdvertiseError("Received data is not a tuple '"+rawresponse+"'")
+
+  if len(responsetuple) != 2:
+    raise CentralAdvertiseError("Response tuple did not have exactly two elements '"+rawresponse+"'")
+  if responsetuple[0] != 'OK':
+    raise CentralAdvertiseError("Central server returns error '"+str(responsetuple)+"'")
+
+  
+  if not type(responsetuple[1]) is list:
+    raise CentralAdvertiseError("Received item is not a list '"+rawresponse+"'")
+
+  for responseitem in responsetuple[1]:
+    if not type(responseitem) is str:
+      raise CentralAdvertiseError("Received item '"+str(responseitem)+"' is not a string in '"+rawresponse+"'")
+
+  # okay, we *finally* seem to have what we expect...
+
+  return responsetuple[1]
+      
+
+#end include centralizedadvertise.r2py
+#begin include centralizedadvertise_v2.r2py
+""" 
+Author: Justin Cappos
+
+Start Date: July 8, 2008
+
+Description:
+Advertisements to a central server (similar to openDHT)
+
+
+"""
+
+#begin include session.r2py
+#already included session.r2py
+#end include session.r2py
+# I'll use socket timeout to prevent hanging when it takes a long time...
+#begin include sockettimeout.r2py
+#already included sockettimeout.r2py
+#end include sockettimeout.r2py
+#begin include serialize.r2py
+#already included serialize.r2py
+#end include serialize.r2py
+
+
+# Hmm, perhaps I should make an initialization call instead of hardcoding this?
+# I suppose it doesn't matter since one can always override these values.
+v2servername = "advertiseserver_v2.poly.edu"
+# This port is updated to use the new port (legacy port is 10101)
+v2serverport = 10102
+
+
+
+class CentralAdvertiseError(Exception):
+  """Error when advertising a value to the central advertise service."""
+
+def v2centralizedadvertise_announce(key, value, ttlval):
+  """
+   <Purpose>
+     Announce a key / value pair into the CHT.
+
+   <Arguments>
+     key: the key to put the value under. This will be converted to a string.
+
+     value: the value to store at the key. This is also converted to a string.
+
+     ttlval: the amount of time until the value expires.   Must be an integer
+
+   <Exceptions>
+     TypeError if ttlval is of the wrong type.
+
+     ValueError if ttlval is not positive 
+
+     CentralAdvertiseError is raised the server response is corrupted
+
+     Various network and timeout exceptions are raised by timeout_openconn
+     and session_sendmessage / session_recvmessage
+
+   <Side Effects>
+     The CHT will store the key / value pair.
+
+   <Returns>
+     None
+  """
+  # do basic argument checking / munging
+  key = str(key)
+  value = str(value)
+
+  if not type(ttlval) is int and not type(ttlval) is long:
+    raise TypeError("Invalid type '"+str(type(ttlval))+"' for ttlval.")
+
+  if ttlval < 1:
+    raise ValueError("The argument ttlval must be positive, not '"+str(ttlval)+"'")
+
+  
+  # build the tuple to send, then convert to a string because only strings
+  # (bytes) can be transmitted over the network...
+  datatosend = ('PUT',key,value,ttlval)
+  datastringtosend = serialize_serializedata(datatosend)
+
+  
+  # send the data over a timeout socket using the session library, then
+  # get a response from the server.
+  sockobj = timeout_openconnection(gethostbyname(v2servername), v2serverport, 
+    timeout=10)
+  try:
+    session_sendmessage(sockobj, datastringtosend)
+    rawresponse = session_recvmessage(sockobj)
+  finally:
+    # BUG: This raises an error right now if the call times out ( #260 )
+    # This isn't a big problem, but it is the "wrong" exception
+    sockobj.close()
+  
+  # We should check that the response is 'OK'
+  try:
+    response = serialize_deserializedata(rawresponse)
+    if response != 'OK':
+      raise CentralAdvertiseError("Centralized announce failed with '"+response+"'")
+  except ValueError, e:
+    raise CentralAdvertiseError("Received unknown response from server '"+rawresponse+"'")
+      
+
+
+
+def v2centralizedadvertise_lookup(key, maxvals=100):
+  """
+   <Purpose>
+     Returns a list of valid values stored under a key
+
+   <Arguments>
+     key: the key to put the value under. This will be converted to a string.
+
+     maxvals: the maximum number of values to return.   Must be an integer
+
+   <Exceptions>
+     TypeError if maxvals is of the wrong type.
+
+     ValueError if maxvals is not a positive number
+
+     CentralAdvertiseError is raised the server response is corrupted
+
+     Various network and timeout exceptions are raised by timeout_openconn
+     and session_sendmessage / session_recvmessage
+
+   <Side Effects>
+     None
+
+   <Returns>
+     The list of values
+  """
+
+  # do basic argument checking / munging
+  key = str(key)
+
+  if not type(maxvals) is int and not type(maxvals) is long:
+    raise TypeError("Invalid type '"+str(type(maxvals))+"' for ttlval.")
+
+  if maxvals < 1:
+    raise ValueError("The argument ttlval must be positive, not '"+str(ttlval)+"'")
+
+  # build the tuple to send, then convert to a string because only strings
+  # (bytes) can be transmitted over the network...
+  messagetosend = ('GET',key,maxvals)
+  messagestringtosend = serialize_serializedata(messagetosend)
+
+  # send the data over a timeout socket using the session library, then
+  # get a response from the server.
+  sockobj = timeout_openconnection(gethostbyname(v2servername), v2serverport, 
+    timeout=10)
+  try:
+    session_sendmessage(sockobj, messagestringtosend)
+    rawreceiveddata = session_recvmessage(sockobj)
+  finally:
+    # BUG: This raises an error right now if the call times out ( #260 )
+    # This isn't a big problem, but it is the "wrong" exception
+    sockobj.close()
+
+
+  try:
+    responsetuple = serialize_deserializedata(rawreceiveddata)
+  except ValueError, e:
+    raise CentralAdvertiseError("Received unknown response from server '"+rawresponse+"'")
+
+  # For a set of values, 'a','b','c',  I should see the response: 
+  # ('OK', ['a','b','c'])    Anything else is WRONG!!!
+  
+  if not type(responsetuple) is tuple:
+    raise CentralAdvertiseError("Received data is not a tuple '"+rawresponse+"'")
+
+  if len(responsetuple) != 2:
+    raise CentralAdvertiseError("Response tuple did not have exactly two elements '"+rawresponse+"'")
+  if responsetuple[0] != 'OK':
+    raise CentralAdvertiseError("Central server returns error '"+str(responsetuple)+"'")
+
+  
+  if not type(responsetuple[1]) is list:
+    raise CentralAdvertiseError("Received item is not a list '"+rawresponse+"'")
+
+  for responseitem in responsetuple[1]:
+    if not type(responseitem) is str:
+      raise CentralAdvertiseError("Received item '"+str(responseitem)+"' is not a string in '"+rawresponse+"'")
+
+  # okay, we *finally* seem to have what we expect...
+
+  return responsetuple[1]
+      
+
+#end include centralizedadvertise_v2.r2py
+#centralizedadvertise_v2 = dy_import_module("centralizedadvertise_v2.r2py")
+#begin include parallelize.r2py
+""" 
+Author: Justin Cappos
+
+Module: A parallelization module.   It performs actions in parallel to make it
+        easy for a user to call a function with a list of tasks.
+
+Start date: November 11th, 2008
+
+This module is adapted from code in seash which had similar functionality.
+
+NOTE (for the programmer using this module).   It's really important to 
+write concurrency safe code for the functions they provide us.  It will not 
+work to write:
+
+def foo(...):
+  mycontext['count'] = mycontext['count'] + 1
+
+YOU MUST PUT A LOCK AROUND SUCH ACCESSES.
+
+"""
+
+
+# I use this to get unique identifiers. 
+#begin include uniqueid.r2py
+""" 
+Author: Justin Cappos
+
+Module: A simple library that provides a unique ID for each call
+
+Start date: November 11th, 2008
+
+This is a really, really simple module, only broken out to avoid duplicating 
+functionality.
+
+NOTE: This will give unique ids PER FILE.   If you have multiple python 
+modules that include this, they will have the potential to generate the
+same ID.
+
+"""
+
+# This is a list to prevent using part of the user's mycontext dict
+# We use getruntime() instead of a list starting with 0, as this 
+# library may get imported multiple times. 
+# See ticket #1319 and #1318 for more details.
+
+current_time = getruntime()
+uniqueid_idlist = [int((current_time - int(current_time))  * 2**32)]
+ 
+uniqueid_idlock = createlock()
+
+def uniqueid_getid():
+  """
+   <Purpose>
+      Return a unique ID in a threadsafe way
+
+   <Arguments>
+      None
+
+   <Exceptions>
+      None
+
+   <Side Effects>
+      None.
+
+   <Returns>
+      The ID (an integer)
+  """
+
+  uniqueid_idlock.acquire(True)
+
+  # I'm using a list because I need a global, but don't want to use the 
+  # programmer's dict
+  myid = uniqueid_idlist[0]
+  uniqueid_idlist[0] = uniqueid_idlist[0] + 1
+
+  uniqueid_idlock.release()
+
+  return myid
+
+
+
+#end include uniqueid.r2py
+
+
+
+class ParallelizeError(Exception):
+  """An error occurred when operating on a parallelized task"""
+
+
+# This has information about all of the different parallel functions.
+# The keys are unique integers and the entries look like this:
+# {'abort':False, 'callfunc':callfunc, 'callargs':callargs,
+# 'targetlist':targetlist, 'availabletargetpositions':positionlist,
+# 'runninglist':runninglist, 'result':result}
+#
+# abort is used to determine if future events should be aborted.
+# callfunc is the function to call
+# callargs are extra arguments to pass to the function
+# targetlist is the list of items to call the function with
+# runninglist is used to track which events are executing
+# result is a dictionary that contains information about completed function.
+#    The format of result is:
+#      {'exception':list of tuples with (target, exception string), 
+#       'aborted':list of targets,
+#       'returned':list of tuples with (target, return value)}
+# 
+parallelize_info_dict = {}
+
+
+
+def parallelize_closefunction(parallelizehandle):
+  """
+   <Purpose>
+      Clean up the state created after calling parallelize_initfunction.
+
+   <Arguments>
+      parallelizehandle:
+         The handle returned by parallelize_initfunction
+          
+
+   <Exceptions>
+      None
+
+   <Side Effects>
+      Will try to abort future functions if possible
+
+   <Returns>
+      True if the parallelizehandle was recognized or False if the handle is
+      invalid or already closed.
+  """
+
+  # There is no sense trying to check then delete, since there may be a race 
+  # with multiple calls to this function.
+  try:
+    del parallelize_info_dict[parallelizehandle]
+  except KeyError:
+    return False
+  else:
+    return True
+
+    
+
+
+
+def parallelize_abortfunction(parallelizehandle):
+  """
+   <Purpose>
+      Cause pending events for a function to abort.   Events will finish 
+      processing their current event.
+
+   <Arguments>
+      parallelizehandle:
+         The handle returned by parallelize_initfunction
+          
+
+   <Exceptions>
+      ParallelizeError is raised if the handle is unrecognized
+
+   <Side Effects>
+      None
+
+   <Returns>
+      True if the function was not previously aborting and is now, or False if 
+      the function was already set to abort before the call.
+  """
+
+  
+  try:
+    if parallelize_info_dict[parallelizehandle]['abort'] == False:
+      parallelize_info_dict[parallelizehandle]['abort'] = True
+      return True
+    else:
+      return False
+  except KeyError:
+    raise ParallelizeError("Cannot abort the parallel execution of a non-existent handle:"+str(parallelizehandle))
+
+
+
+def parallelize_isfunctionfinished(parallelizehandle):
+  """
+   <Purpose>
+      Indicate if a function is finished
+
+   <Arguments>
+      parallelizehandle:
+         The handle returned by parallelize_initfunction
+          
+
+   <Exceptions>
+      ParallelizeError is raised if the handle is unrecognized
+
+   <Side Effects>
+      None
+
+   <Returns>
+      True if the function has finished, False if it is still has events running
+  """
+
+  
+  try:
+    if parallelize_info_dict[parallelizehandle]['runninglist']:
+      return False
+    else:
+      return True
+  except KeyError:
+    raise ParallelizeError("Cannot get status for the parallel execution of a non-existent handle:"+str(parallelizehandle))
+
+
+
+
+
+def parallelize_getresults(parallelizehandle):
+  """
+   <Purpose>
+      Get information about a parallelized function
+
+   <Arguments>
+      parallelizehandle:
+         The handle returned by parallelize_initfunction
+          
+   <Exceptions>
+      ParallelizeError is raised if the handle is unrecognized
+
+   <Side Effects>
+      None
+
+   <Returns>
+      A dictionary with the results.   The format is
+        {'exception':list of tuples with (target, exception string), 
+         'aborted':list of targets, 'returned':list of tuples with (target, 
+         return value)}
+  """
+
+  
+  try:
+    # I copy so that the user doesn't have to deal with the fact I may still
+    # be modifying it
+    return parallelize_info_dict[parallelizehandle]['result'].copy()
+  except KeyError:
+    raise ParallelizeError("Cannot get results for the parallel execution of a non-existent handle:"+str(parallelizehandle))
+
+
+
+      
+
+
+
+#JAC: This is a fix for ticket #1306.   Closures work in odd ways and we 
+# need to move the workercount variable out of scope...
+def _get_function_to_run(parallelizehandle, workercount):
+  def function_to_run():
+    parallelize_execute_function(parallelizehandle, workercount)
+  return function_to_run
+
+
+def parallelize_initfunction(targetlist, callerfunc,concurrentevents=5, *extrafuncargs):
+  """
+   <Purpose>
+      Call a function with each argument in a list in parallel
+
+   <Arguments>
+      targetlist:
+          The list of arguments the function should be called with.   Each
+          argument is passed once to the function.   Items may appear in the
+          list multiple times
+
+      callerfunc:
+          The function to call
+ 
+      concurrentevents:
+          The number of events to issue concurrently (default 5).   No more 
+          than len(targetlist) events will be concurrently started.
+
+      extrafuncargs:
+          Extra arguments the function should be called with (every function
+          is passed the same extra args).
+
+   <Exceptions>
+      ParallelizeError is raised if there isn't at least one free event.   
+      However, if there aren't at least concurrentevents number of free events,
+      this is not an error (instead this is reflected in parallelize_getstatus)
+      in the status information.
+
+   <Side Effects>
+      Starts events, etc.
+
+   <Returns>
+      A handle used for status information, etc.
+  """
+
+  parallelizehandle = uniqueid_getid()
+
+  # set up the dict locally one line at a time to avoid a ginormous line
+  handleinfo = {}
+  handleinfo['abort'] = False
+  handleinfo['callfunc'] = callerfunc
+  handleinfo['callargs'] = extrafuncargs
+  # make a copy of target list because 
+  handleinfo['targetlist'] = targetlist[:]
+  handleinfo['availabletargetpositions'] = range(len(handleinfo['targetlist']))
+  handleinfo['result'] = {'exception':[],'returned':[],'aborted':[]}
+  handleinfo['runninglist'] = []
+
+  
+  parallelize_info_dict[parallelizehandle] = handleinfo
+
+  # don't start more threads than there are targets (duh!)
+  threads_to_start = min(concurrentevents, len(handleinfo['targetlist']))
+
+  for workercount in range(threads_to_start):
+    # we need to append the workercount here because we can't return until 
+    # this is scheduled without having race conditions
+    parallelize_info_dict[parallelizehandle]['runninglist'].append(workercount)
+    try:
+      # See ticket #1306
+      # It is really important to have this odd call to a helper function.
+      # If you do not do this, the workercount will be in scope of the closure
+      # and it will increment a single workercount variable in the outer scope.
+      function_to_run = _get_function_to_run(parallelizehandle, workercount)
+
+      createthread(function_to_run)
+      
+    except:
+      # If I'm out of resources, stop
+      # remove this worker (they didn't start)
+      parallelize_info_dict[parallelizehandle]['runninglist'].remove(workercount)
+      if not parallelize_info_dict[parallelizehandle]['runninglist']:
+        parallelize_closefunction(parallelizehandle)
+        raise Exception, "No events available!"
+      break
+  
+  return parallelizehandle
+    
+
+
+def parallelize_execute_function(handle, myid):
+  # This is internal only.   It's used to execute the user function...
+
+  # No matter what, an exception in me should not propagate up!   Otherwise,
+  # we might result in the program's termination!
+  try:
+
+    while True:
+      # separate this from below functionality to minimize scope of try block
+      thetargetlist = parallelize_info_dict[handle]['targetlist']
+      try:
+        mytarget = thetargetlist.pop()
+      except IndexError:
+        # all items are gone, let's return
+        return
+
+      # if they want us to abort, put this in the aborted list
+      if parallelize_info_dict[handle]['abort']:
+        parallelize_info_dict[handle]['result']['aborted'].append(mytarget)
+
+      else:
+        # otherwise process this normally
+
+        # limit the scope of the below try block...
+        callfunc = parallelize_info_dict[handle]['callfunc']
+        callargs = parallelize_info_dict[handle]['callargs']
+
+        try:
+          retvalue = callfunc(mytarget,*callargs)
+        except Exception, e:
+          # always log on error.   We need to report what happened
+          parallelize_info_dict[handle]['result']['exception'].append((mytarget,str(e)))
+        else:
+          # success, add it to the dict...
+          parallelize_info_dict[handle]['result']['returned'].append((mytarget,retvalue))
+
+
+  except KeyError:
+    # A KeyError is normal if they've closed the handle
+    return
+
+  except Exception, e:
+    log('Internal Error: Exception in parallelize_execute_function', e, '\n')
+
+  finally:
+    # remove my entry from the list of running worker threads...
+    try:
+      parallelize_info_dict[handle]['runninglist'].remove(myid)
+    except (ValueError, KeyError):
+      pass
+    
+
+    
+
+
+#end include parallelize.r2py
+#begin include udpcentralizedadvertise.r2py
+""" 
+Author: Justin Cappos
+
+Start Date: Oct 30, 2011
+
+Description:
+Advertisements to a central server (similar to openDHT)
+
+This uses UDP and is conceptually quite similar to the centralized advertise
+service
+"""
+#begin include serialize.r2py
+#already included serialize.r2py
+#end include serialize.r2py
+#begin include uniqueid.r2py
+#already included uniqueid.r2py
+#end include uniqueid.r2py
+#begin include random.r2py
+#already included random.r2py
+#end include random.r2py
+
+
+# Hmm, perhaps I should make an initialization call instead of hardcoding this?
+# I suppose it doesn't matter since one can always override these values
+udpservername = "udpadvertiseserver.poly.edu"
+udpserverport = 10102
+
+# how long to wait for timeouts...
+udpcentralizedservertimeouts = [1,2,4,8]
+
+# If a query times out or if we decide to abandon it, put the ID here. That way, 
+# the communicate function can reject it if the server responds belatedly.
+failed_querylist = []
+
+
+class UDPCentralAdvertiseError(Exception):
+  """Error when advertising a value to the central advertise service."""
+
+class UDPNoResponseError(Exception):
+  """Error when advertising a value to the central advertise service."""
+
+
+
+
+
+
+# This helper function handles communications with the server
+def _udpcentralizedadvertise_communicate(datastringtosend, timeout, queryid):
+
+  # Let's get ready to receive a response...
+  localip = getmyip()
+  # Get the ports available to our vessel (#1375)
+  # (I'll try all of the nominally available ports, not only 
+  # the ones that are currently unused, because port usage might 
+  # change while we still set up things here.)
+  available_resources, ignore, ignore = getresources()
+  portrange = list(available_resources['messport'])
+  # Shuffle the portrange to make it unlikely we reuse the 
+  # same quintuple twice in a row (#1249)
+  random_shuffle(portrange)
+
+  for udprequestport in portrange:
+    try:
+      udpresponsesocket = listenformessage(localip, udprequestport)
+      # We've found a port, continue outside of the loop
+      break
+    except (DuplicateTupleError, CleanupInProgressError,
+      AlreadyListeningError, AddressBindingError), e:
+      # These are "legitimate" in the sense that there is something 
+      # in our very program already using the port we just tried.
+      continue
+    except Exception:
+      # Something else went wrong, maybe we aren't connected to the Internet.
+      raise
+  else:
+    # Checked the whole port range without success
+    raise AddressBindingError, "Could not find any usable UDP listen port in the vessel's messports " + str(portrange) + " on IP address " + str(localip) + "."
+
+  starttime = getruntime()
+
+  # but always close the response socket...
+  try:
+    # send the request over UDP...
+    udpserverip = gethostbyname(udpservername)
+    sendmessage(udpserverip, udpserverport,
+      datastringtosend, localip, udprequestport)
+
+    # Don't go into infinite waiting time, if there is no response from
+    # server, wait till timeout and raise an error...
+    while getruntime() < starttime + timeout:
+      try:
+        # XXX Check if that's the server we contacted! See #1268.
+        (remoteip, remoteport, mess) = udpresponsesocket.getmessage()
+        if (remoteip, remoteport) == (udpserverip, udpserverport):
+          return serialize_deserializedata(mess)
+      except SocketWouldBlockError:
+        pass
+
+      # Already done? Let's play nice with the other threads.
+      sleep(0.01) # Strongly recommend NOT to set this any higher.
+      
+    raise UDPNoResponseError("Did not receive a response from UDP advertise server")
+
+  finally:
+    # always close the response socket...
+    udpresponsesocket.close()
+
+
+
+def udpcentralizedadvertise_announce(key, value, ttlval):
+  """
+   <Purpose>
+     Announce a key / value pair into the CHT.
+
+   <Arguments>
+     key: the key to put the value under. This will be converted to a string.
+
+     value: the value to store at the key. This is also converted to a string.
+
+     ttlval: the amount of time until the value expires.   Must be an integer
+
+   <Exceptions>
+     TypeError if ttlval is of the wrong type.
+
+     ValueError if ttlval is not positive 
+
+     UDPCentralAdvertiseError is raised the server response is corrupted
+
+     Various network and timeout exceptions are raised by udp messages
+
+   <Side Effects>
+     The CHT will store the key / value pair.
+
+   <Returns>
+     None
+  """
+  # do basic argument checking / munging
+  key = str(key)
+  value = str(value)
+
+  if not type(ttlval) is int and not type(ttlval) is long:
+    raise TypeError("Invalid type '"+str(type(ttlval))+"' for ttlval.")
+
+  if ttlval < 1:
+    raise ValueError("The argument ttlval must be positive, not '"+str(ttlval)+"'")
+
+  # myrequestport = getusableport()
+
+  unique_request_id = uniqueid_getid()
+
+  # We'll loop through and send a request, increasing the timeout upon failure
+  for thistimeout in udpcentralizedservertimeouts:
+
+    # build the tuple to send, then convert to a string because only strings
+    # (bytes) can be transmitted over the network...
+    datatosend = ('PUT',key,value,ttlval, unique_request_id)
+    datastringtosend = serialize_serializedata(datatosend)
+  
+    rawresponse = None
+
+    try:
+    # send the request over UDP...
+      rawresponse = _udpcentralizedadvertise_communicate(datastringtosend, 
+        thistimeout, unique_request_id)
+
+    except UDPNoResponseError:
+      # let's increase the timeout...
+      continue
+    
+    if not rawresponse == None:
+      # We should check that the response is 'OK'
+      try:
+        response = rawresponse
+      except ValueError, e:
+        raise UDPCentralAdvertiseError("Received unknown response from server '"+rawresponse+"'")
+
+      if type(response) is not tuple or len(response) != 2:
+        raise UDPCentralAdvertiseError("UDP Centralized announce received invalid response type '"+str(response)+"'")
+      if type(response[0]) is not str:
+        raise UDPCentralAdvertiseError("UDP Centralized announce received response with invalid first parameter '"+str(response)+"'")
+  
+      if response[1] != unique_request_id:
+      # This can happen if multiple announces are performed in quick 
+      # succession, see #1294. Workaround: sleep() a bit between requests.
+        raise UDPCentralAdvertiseError("udpcentralized_announce sent request id " + str(unique_request_id) + ", received different request id. Full response: '" + str(response) + "'")
+
+      if response[0] != 'OK':
+        raise UDPCentralAdvertiseError("UDP Centralized announce failed with '"+response[0]+"'")
+
+      else:
+        # else all is well!   Let's return success
+        return
+      
+  failed_querylist.append(unique_request_id)
+
+  # fell through all of the timeout values...
+  raise UDPCentralAdvertiseError("UDP Centralized announce timed out!")
+
+
+
+def udpcentralizedadvertise_lookup(key, maxvals=100):
+  """
+   <Purpose>
+     Returns a list of valid values stored under a key
+
+   <Arguments>
+     key: the key to look up. This will be converted to a string.
+
+     maxvals: the maximum number of values to return.   Must be an integer
+
+   <Exceptions>
+     TypeError if maxvals is of the wrong type.
+
+     ValueError if maxvals is not a positive number
+
+     UDPCentralAdvertiseError is raised the server response is corrupted
+
+     Various network and timeout exceptions are raised by timeout_openconn
+     and session_sendmessage / session_recvmessage
+
+   <Side Effects>
+     None
+
+   <Returns>
+     The list of values
+  """
+
+  # do basic argument checking / munging
+  key = str(key)
+
+  if not type(maxvals) is int and not type(maxvals) is long:
+    raise TypeError("Invalid type '"+str(type(maxvals))+"' for ttlval.")
+
+  if maxvals < 1:
+    raise ValueError("The argument ttlval must be positive, not '"+str(ttlval)+"'")
+
+
+  # We'll loop through and send a request, increasing the timeout upon failure
+  for thistimeout in udpcentralizedservertimeouts:
+
+    # get a unique request id
+    unique_request_id = uniqueid_getid()
+  
+    # build the tuple to send, then convert to a string because only strings
+    # (bytes) can be transmitted over the network...
+    messagetosend = ('GET',key,maxvals,unique_request_id)
+    messagestringtosend = serialize_serializedata(messagetosend)
+
+  
+    try:
+    # send the request over UDP...
+      responsetuple = _udpcentralizedadvertise_communicate(messagestringtosend, thistimeout, unique_request_id)
+
+    except UDPNoResponseError:
+      # let's increase the timeout...
+      continue
+  
+
+    # try:
+    #   responsetuple = serialize.serialize_deserializedata(rawreceiveddata[2])
+    # except ValueError, e:
+    #   raise UDPCentralAdvertiseError("Received unknown response from server '"+rawresponse+"'")
+
+    # For a set of values, 'a','b','c',  I should see the response: 
+    # ('OK', ['a','b','c'])    Anything else is WRONG!!!
+  
+    if not type(responsetuple) is tuple:
+      raise UDPCentralAdvertiseError("Received data is not a tuple '"+str(responsetuple)+"'")
+
+
+    if len(responsetuple) != 3:
+      raise UDPCentralAdvertiseError("Response tuple did not have exactly three elements '"+str(responsetuple)+"'")
+
+    if responsetuple[2] != unique_request_id:
+      # This can happen if multiple lookups are performed in quick 
+      # succession, see #1294. Workaround: sleep() a bit between requests.
+      raise UDPCentralAdvertiseError("udpcentralized_lookup sent request id " + str(unique_request_id) + ", received different request id. Full response: '" + str(response) + "'")
+
+    if responsetuple[0] != 'OK':
+      raise UDPCentralAdvertiseError("Central server returns error '"+str(responsetuple[:-1])+"'")
+
+
+  
+    if not type(responsetuple[1]) is list:
+      raise UDPCentralAdvertiseError("Received item is not a list '"+responsetuple+"'")
+
+    for responseitem in responsetuple[1]:
+      if not type(responseitem) is str:
+        raise UDPCentralAdvertiseError("Received item '"+str(responseitem)+"' is not a string in '"+responsetuple+"'")
+
+    # okay, we *finally* seem to have what we expect...
+
+    return responsetuple[1]
+
+  else:
+    # We are done with the for loop. There was no reply from the server.
+    raise UDPCentralAdvertiseError("udpcentralizedadvertise_lookup for " +
+      str(key) + " (" + str(maxvals) + " maxvals) generated no response " + 
+      "from server " + udpservername + ". Giving up.")
+
+
+#end include udpcentralizedadvertise.r2py
+
+
+# All the names of services we can support.
+# As of January 2012, openDHT is no longer a default service.
+_advertise_all_services = ("central", "central_v2", "UDP")
+
+
+nodemanager_announce_context = {}
+for service in _advertise_all_services:
+  nodemanager_announce_context["skip" + service] = 0
+  nodemanager_announce_context["previous" + service + "skip"] = 1
+nodemanager_announce_context_lock = createlock()
+
+
+# an exception to indicate an error occured while advertising
+class AdvertiseError(Exception):
+  pass
+
+
+
+
+def _try_advertise_announce(args):
+  """
+  <Purpose>
+    Helper function to be used in parallel with other advertise requests. 
+    This is the function we pass to parallelize to perform simultaneous 
+    queries.
+
+  <Arguments>
+    args (tuple)
+      A tuple containing the following:
+        which_service (string)
+          The service we should use to advertise, such as "central" or "UDP".
+        key (string)
+          The advertisement key. For most nodes, this will be a public key.
+        value (string)
+          The advertisement value to be assigned to key.
+        ttlval (int)
+          Time To Live for this advertisement, in seconds.
+        exceptions (List reference, should literally be [''])
+          An empty list reference which will be have exception data in its zero 
+          index if something goes wrong. Due to this method's parallelized nature, 
+          we cannot simply return this data; it is not invoked by this module.
+        finishedref (List with boolean in zero index)
+          This function sets finishedref[0] = true when it has completed 
+          successfully. This is used as a flag so that we know when to return 
+          advertise data to the client later.
+
+  <Exceptions>
+    AdvertiseError
+      If an invalid service type is specified, this exception will be raised.
+    ValueError
+      Too many, or too few values passed in the args tuple.
+
+  <Side Effects>
+    Contingent on the side effects of the modules invoked for different 
+    services, this consumes an outsocket and insocket on use. Therefore, 
+    invoking too many instances of these in parallel can lead to crashing 
+    if the application exceeds its allotted socket count.
+
+    The number of sockets permitted to an application is determined by 
+    its associated restrictions file.
+
+  <Returns>
+    None
+  """
+  # ValueError if there are too many or too few values.
+  which_service, key, value, ttlval, exceptions, finishedref = args
+
+  if which_service not in _advertise_all_services:
+    raise AdvertiseError("Incorrect service type used in internal function _try_advertise_announce.")
+
+  try:
+    if which_service == "central":
+      centralizedadvertise_announce(key, value, ttlval)
+    elif which_service == "central_v2":
+      v2centralizedadvertise_announce(key, value, ttlval)
+    elif which_service == "UDP":
+      udpcentralizedadvertise_announce(key, value, ttlval)
+    else:
+      # This should be redundant with the previous explicit AdvertiseError.
+      # One cannot (usually) be too careful.
+      raise AdvertiseError("Did not understand service type.")
+
+    finishedref[0] = True     # Indicate that this instance has finished.
+    
+    nodemanager_announce_context_lock.acquire(True)
+    try:
+      nodemanager_announce_context["previous" + which_service + "skip"] = 1
+    finally:
+      nodemanager_announce_context_lock.release()
+
+  except Exception, e:
+    nodemanager_announce_context_lock.acquire(True)
+    try:
+      exceptions[0] += 'announce error (type: ' + which_service + '): ' + str(e)
+      nodemanager_announce_context["skip" + which_service] = \
+          nodemanager_announce_context["previous" + which_service + "skip"] + 1
+      nodemanager_announce_context["previous" + which_service + "skip"] = \
+          min(nodemanager_announce_context["previous" + which_service + "skip"] * 2, 16)
+    finally:
+      nodemanager_announce_context_lock.release()
+
+
+
+
+
+def advertise_announce(key, value, ttlval, concurrentevents=4, 
+    graceperiod=5, timeout=30):
+  """
+  <Purpose>
+    Announce (PUT) a key : value pair to all default advertise services.
+
+  <Arguments>
+    key (string)
+      The key for our advertise dictionary entry.
+
+    value (string)
+      The value for our advertise dictionary entry.
+
+    ttlval (int)
+      Time in seconds to persist the associated key<->value pair.
+    
+    concurrentevents (int) (optional)
+      How many services to announce on in parallel.
+
+    graceperiod (float) (optional)
+      Amount of time to wait before returning, provided at least one of the 
+      parallel attempts has finished.
+
+      Note that even when this method returns, parallelized announce attempts may
+      still be running. These will terminate in relatively short order, but be 
+      aware of this. It could be a problem, for example, if you tried to set graceperiod 
+      very low to send rapid-fire queries to the advertise servers. This would 
+      probably cause you to exceed your allotted outsockets. (This is only 
+      possible if your timeout value is greater than your graceperiod value.)
+
+      In short, graceperiod is a "soft" timeout. Provided at least one query has 
+      been confirmed, the method will return after graceperiod seconds at most.
+      If none return, this could run all the way till timeout.
+
+    timeout (int) (optional)
+      Absolute allowed time before returning. Provided the method has not 
+      returned by now, successful or not, it will terminate after timeout seconds.
+
+  <Exceptions>
+    AdvertiseError if something goes wrong.
+
+  <Side Effects>
+    Spawns as many worker events as concurrentevents specifies, limited by the
+    number of services available (currently 2). Each worker event consumes one 
+    insocket and one outsocket until it is finished.
+
+  <Returns>
+    None.
+  """
+  # convert different types to strings to avoid type conversion errors #874
+  key = str(key)
+  value = str(value)
+
+  # Wrapped in an array so we can modify the reference (python strings are immutable).
+  exceptions = [''] # track exceptions that occur and raise them at the end
+
+  parallize_worksets = []
+  start_time = getruntime()
+
+  onefinished = [False]
+
+  # Populate parallel jobs list.
+  for service_type in _advertise_all_services:
+    if nodemanager_announce_context["skip" + service_type] == 0:
+      parallize_worksets.append((service_type, key, value, ttlval, 
+          exceptions, onefinished))
+    else:
+      nodemanager_announce_context_lock.acquire(True)
+      try:
+        nodemanager_announce_context["skip" + service_type] -= 1
+      finally:
+        nodemanager_announce_context_lock.release()
+
+  # Begin parallel jobs, instructing parallelize to run no more than 
+  # concurrentevents at once.
+  ph = parallelize_initfunction(parallize_worksets, 
+      _try_advertise_announce, concurrentevents=concurrentevents)
+
+  # Once we have either timed out or exceeded graceperiod with at least one 
+  # service reporting, return whatever data we have. Remaining threads will 
+  # be forsaken and allowed to terminate at their leisure.
+  while not parallelize_isfunctionfinished(ph):
+    sleep(0.015)
+    if getruntime() - start_time > timeout or \
+        (getruntime() - start_time > graceperiod and onefinished[0]):
+      parallelize_abortfunction(ph)
+      break
+
+  # This does not terminate all parallel threads; do not assume it does.
+  parallelize_closefunction(ph)
+
+  # check to see if any successfully returned 
+  if onefinished == [False]:
+    raise AdvertiseError("None of the advertise services could be contacted")
+
+  # if we got an error, indicate it
+  if exceptions[0] != '':
+    raise AdvertiseError(str(exceptions))
+
+  return None
+
+
+
+
+def _try_advertise_lookup(args):
+  """
+  <Purpose>
+    Helper function for advertise lookups. This is the instance function for 
+    parallel lookups which is passed to and managed by parallelize. Each 
+    execution of this method will perform one lookup and return whatever 
+    it is able to get.
+
+  <Arguments>
+    args (4-tuple)
+      which_service (string)
+        The service on which to perform a lookup. This must match one of the 
+        values in _advertise_all_services.
+      key (string)
+        The key to retrieve a value for.
+      maxvals (int)
+        The maximum number of entries to retrieve from the server.
+      finishedref (Array reference with a boolean at index zero)
+        The state of the function instance. If it completes successfully,
+        this boolean will be set to True.
+  """
+  which_service, key, maxvals, finishedref = args
+
+  if which_service not in _advertise_all_services:
+    raise AdvertiseError("Incorrect service type used in internal function _try_advertise_lookup.")
+
+  try:
+    if which_service == "central":
+      results = centralizedadvertise_lookup(key, maxvals)
+    elif which_service == "central_v2":
+      results = v2centralizedadvertise_lookup(key, maxvals)
+    elif which_service == "UDP":
+      results = udpcentralizedadvertise_lookup(key, maxvals)
+    else:
+      raise AdvertiseError("Did not understand service type!")
+
+    finishedref[0] = True
+    return results
+  
+  except Exception, e:
+    return []
+
+
+
+
+def advertise_lookup(key, maxvals=100, lookuptype=None, 
+    concurrentevents=4, graceperiod=5, timeout=60):
+  """
+  <Purpose>
+    Lookup (GET) (a) value(s) stored at the given key in the central advertise
+    server, central advertise server V2, UDP, or all.
+
+  <Arguments>
+    key
+      The key used to lookup values.
+
+    maxvals (optional, defaults to 100):
+      Maximum number of values to return.
+
+    lookuptype (optional, defaults to ['central', 'central_v2', 'UDP']):
+      Which services to employ looking up values.
+    
+    concurrentevents (optional, defaults to 2):
+      How many services to lookup on in parallel.
+
+    graceperiod (optional, defaults to 10):
+      After this many seconds (can be a float or int type), return the
+      results if one service was reached successfully.
+
+    timeout (optional, defaults to 60):
+      After this many seconds (can be a float or int type), give up.
+
+  <Exceptions>
+    TimeoutError if no service returns an answer and at least one service
+    has a timeout.
+
+    AdvertiseError if something goes wrong with *all* services, such as a bad 
+    argument.  *** THIS DOES NOT HAPPEN NOW IN ALL CASES. SEE #1329. ***
+
+    If some services timeout and others have different errors, a TimeoutError
+    will be raised.  If one succeeds, no exception is raised.
+
+  <Side Effects>
+    Spawns as many worker events as concurrentevents specifies, limited by the
+    number of services in lookuptype.
+
+  <Returns>
+    All unique values stored at the key.
+  """
+  # convert different types to strings to avoid type conversion errors #874
+  key = str(key)
+
+  # As of January 2012, DHT is no longer a default service.
+  if lookuptype is None:
+    lookuptype = ['central', 'central_v2', 'UDP']
+
+  parallel_worksets = []
+  start_time = getruntime()
+
+  onefinished = [False]
+
+  # Populate parallel jobs list.
+  for servicetype in lookuptype:
+    if servicetype == "central":
+      parallel_worksets.append(("central", key, maxvals, onefinished))
+    elif servicetype == "central_v2":
+      parallel_worksets.append(("central_v2", key, maxvals, onefinished))
+    elif servicetype == "UDP":
+      parallel_worksets.append(("UDP", key, maxvals, onefinished))
+    else:
+      raise AdvertiseError("Incorrect service type '" + servicetype + "' passed to advertise_lookup().")
+
+  # Start parallel jobs.
+  ph = parallelize_initfunction(parallel_worksets, 
+      _try_advertise_lookup, concurrentevents=concurrentevents)
+
+  # Wait until either timeout or graceperiod with at least one service 
+  # success, and then continue.
+  while not parallelize_isfunctionfinished(ph):
+    sleep(0.015)
+    if getruntime() - start_time > timeout:
+      # This timed out.   Time to abort.   Fix for #1329.
+      parallelize_abortfunction(ph)
+      raise TimeoutError("Advertise lookup timed out without contacting any service")
+    if (getruntime() - start_time > graceperiod and onefinished[0]):
+      # This hit the grace period.   (At least one service worked, but not
+      # as many as were requested.)
+      parallelize_abortfunction(ph)
+      break
+
+
+  all_parallel_results = parallelize_getresults(ph)
+  parallel_results = all_parallel_results['returned']
+  results = []
+
+  atleastonecorrectresult = False
+
+  # Construct a list of return results
+  for parallel_result in parallel_results:
+    requestinfo, return_value = parallel_result
+    # Did this succeed?
+    if requestinfo[3] == [True]:
+      atleastonecorrectresult = True
+
+      results += return_value
+
+  parallelize_closefunction(ph)
+
+  if atleastonecorrectresult:
+    # Filter results and return.
+    return listops_uniq(results)
+
+  else:
+    # JAC: I should check the errors here and raise TimeoutError only if
+    # timeout was actually the issue.   However with the way this is written 
+    # with the helper function, all exception information is lost.   
+    raise TimeoutError('Error performing lookup.   No services succeeded.')
+ 
+
+#end include advertise.r2py
+
+#begin include random.r2py
+#already included random.r2py
+#end include random.r2py
+
+#begin include sockettimeout.r2py
+#already included sockettimeout.r2py
+#end include sockettimeout.r2py
+
+
+
+
+# This function contacts the server to get the time from a NTP
+def tcp_time_updatetime(localport):
+  """
+  <Purpose>
+    Opens a connection with a server hosting time_server.r2py, which obtains the
+    current time via a NTP, then calls time_settime(float(currenttime)) to set
+    the current time to the received value form the server.
+
+  <Arguments>
+    localport:
+
+      The local port which may be used in contacting NTP servers.  It is
+      currently not used in this function, but must be present as an argument
+      for compatibility issues with time.r2py.
+
+  <Exceptions>
+    Exception raised if advertise_lookup("time_server") fails after
+    ten tries.
+
+    Exception raised when a connection is not able to be established with any of
+    the servers running time_server.r2py.
+
+  <Side Effects>
+    time_settime(float(currenttime)) is called to set the time.
+
+  <Returns>
+    None.
+
+"""
+
+  # Get the ips and ports of servers hosting time_server.r2py.
+  # Retry if there is an exception.
+
+  # We raise the following string if lookups succeeded but only 
+  # return empty lists. (In this case, there are no exceptions we 
+  # could inform the caller of.)
+  exceptionslist = ["advertise_lookup did not reveal any node advertising 'time_server'"]
+  for attempt in range(2):
+    try:
+      serveraddresses = advertise_lookup("time_server")
+    except Exception, e:
+      # Log and retry
+      exceptionslist.append((type(e), str(e)))
+      sleep(2)
+    else:
+      if serveraddresses != [] and serveraddresses[0] != '':
+        break
+  else:
+    # We never broke out of the for loop. This indicates a problem.
+    raise TimeError("tcp_time could not find any servers running time_server.r2py using advertise_lookup. Errors: " + str(exceptionslist))
+
+
+  timelength = 25  # Max length of string, representing the time, to be received
+  # XXX Shuffling takes excessively long (10s on a list of 20 servers)!
+  shuffledserveraddresses = random_sample(serveraddresses,min(len(serveraddresses),5))
+
+  # Try to obtain a timestamp from one of at most five 
+  # random servers hosting time_server.r2py
+  exceptionslist = []
+  serverindex = 0
+  for server_ip_and_port in shuffledserveraddresses:
+    remoteaddress = server_ip_and_port.split(':')
+    remoteip = remoteaddress[0]
+    remoteport = int(remoteaddress[1])
+
+    try:
+      sockobject = timeout_openconnection(remoteip, remoteport, 
+        getmyip(), localport, timeout=10)
+    except Exception, e:
+      exceptionslist.append((server_ip_and_port, type(e), str(e)))
+    else:
+      break
+  else:
+    # Didn't break out of the loop. Tried all time servers to no avail.
+    raise TimeError("tcp_time could not contact any of the ",len(shuffledserveraddresses)," servers running time_server.r2py. Errors encountered: " + str(exceptionslist))
+
+
+  currenttime = ''
+  while '$' not in currenttime:
+    currenttime += sockobject.recv(20)
+  sockobject.close()
+  currenttime = float(currenttime[:-1])
+
+  # finally, set the time
+  time_settime(currenttime)
+  
+
+
+
+
+#register the update method
+time_register_method('tcp', tcp_time_updatetime)
+
+#end include tcp_time.r2py
+#begin include time_interface.r2py
+#already included time_interface.r2py
+#end include time_interface.r2py
+
+
+####################################################
+# Time public methods:
+# ---------------------
+# The functionalities defined here are implemented
+# in the time_interface.r2py file, as they are used
+# by both the ntp_time and tcp_time. We provide a 
+# similar function here, as programmers will be 
+# using the time.r2py library rather than the 
+# time_interface.r2py library.
+####################################################
+ 
+
+
+
+#end include time.r2py
+log('done!\n')
+
+def friend_init():
+  """
+  Initialized the node with its unique random string.
+  """
+  filename = FRIENDS_IDFILE
+  nodeid = ""
+  
+  if filename not in listfiles():  
+    # ID file not exist
+    nodeid = random_nbit_int(ID_LENGTH)
+    filefd = openfile(filename, True)
+    filefd.writeat(str(nodeid), 0) 
+    filefd.close()
+  else: 
+    # ID file exists
+    filefd = openfile(filename, False)
+    nodeid = filefd.readat(None, 0)
+    filefd.close()
+    
+  # need to get the base time from NTP so we know how to calculate the offset...
+  while True:
+    try:
+      time_updatetime(63105)
+    except SocketWouldBlockError:
+      sleep(5)
+      log('failed to update time, retrying...\n')
+    else:
+      break
+
+  return nodeid
+
+
+def main():
+  """
+  Main program: connect to a server.
+  """
+  
+  myid = friend_init()
+  log('finished initialization\n')
+
+  candidate_port_list = list(getresources()[0]['connport'])
+
+  # open a connection to the remote server, send my info, and then sleep 5 mins (if successful)
+  while True:
+    # handle the (very unlikely) situation where I have tried all local ports and found them in use.
+    if candidate_port_list == []:
+      candidate_port_list = list(getresources()[0]['connport'])
+        
+    try:
+      myip=getmyip()
+      serversocket = openconnection(DEST_IP, DEST_PORT, myip, 63104, OPENCONN_TIMEOUT)
+    except DuplicateTupleError:
+      # CHOOSE A NEW CANDIDATE PORT IF IN USE...
+      currentcandidate_port = candidate_port_list.pop()
+      log("The (ip, port) tuple is already used.  Moving to port ",currentcandidate_port,"\n")
+      continue
+    except ConnectionRefusedError:
+      log("The server is not listening. Retry after 5 sec.\n")
+      sleep(5)
+      continue
+    except TimeoutError:  
+      log("Connection timed out after " + str(OPENCONN_TIMEOUT) + "secs.\n")
+      continue
+    except InternetConnectivityError: 
+      log("The network is down.\n")
+      sleep(5)
+      continue
+    except CleanupInProgressError:
+      log("The (ip, port) tuple is still being cleaned up by the OS.\n")
+      sleep(20)
+      continue
+      
+    # we've connected, send a message and disconnect...
+    messagetosend = str(myid) + '\t' + myip
+    
+    try:
+      # three times, we want to try to send if it would block...
+      for attempt in range(3):
+        try:
+          serversocket.send(messagetosend)
+          # success!  Log this...
+          timestring = str(time_gettime())
+          log(timestring + ' friend ' + str(myid) + ' reported to server at ' + myip + '..\n')
+          break
+        except SocketWouldBlockError:
+          log("SocketWouldBlockError\n")
+          sleep(1)
+        except SocketClosedLocal:
+          log("Local socket closed or remote server down.\n")
+          break
+        except SocketClosedRemote:
+          log("Local socket closed or remote server down.\n")
+          break  
+        except Exception as e:
+          log("Unexpected error " + str(e) + "\n")
+      else:
+        log('Tried 3 times to send and it blocked each time.  Aborting this connection!\n')
+        
+    finally:
+      serversocket.close()
+      # wait for 5 mins and try again...
+      sleep(5*60)  
+
+    
+  
+
+############ main program ############  
+FRIENDS_IDFILE = "friendsid"  # file that stores the unique ID of a node
+ID_LENGTH = 8  # length of the node ID
+
+DEST_IP = '198.162.52.146' # IP of kramer.nss.cs.ubc.ca
+DEST_PORT = 63109
+OPENCONN_TIMEOUT = 5  # secs before openconnection times out
+
+main()
+
