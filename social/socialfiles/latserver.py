@@ -15,7 +15,8 @@ s.listen(5)
 while 1:
   conn, addr = s.accept()
   data = conn.recv(BUFFER_SIZE)
-  if data: 
+  if data:
+    print "received ", data 
     conn.send(data) 
   conn.close()
 

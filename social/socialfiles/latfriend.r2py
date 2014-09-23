@@ -3452,14 +3452,14 @@ def friend_init():
     filefd.close()
     
   # need to get the base time from NTP so we know how to calculate the offset...
-  while True:
+  """while True:
     try:
       time_updatetime(63105)
     except SocketWouldBlockError:
       sleep(5)
       log('failed to update time, retrying...\n')
     else:
-      break
+      break"""
 
   return nodeid
 
@@ -3514,11 +3514,11 @@ def main():
           serversocket.send(messagetosend)
           # success!  Log this...
           starttime = getruntime()
-          timestring = str(time_gettime())
-          log(timestring + ' friend ' + str(myid) + ' reported to server at ' + myip + '..\n')
+          #timestring = str(time_gettime())
+          log('friend ' + str(myid) + ' reported to server at ' + myip + '..\n')
           break
         except SocketWouldBlockError:
-          log("SocketWouldBlockError\n")
+          log("SocketWouldBlockError in send\n")
           sleep(1)
         except SocketClosedLocal:
           log("Local socket closed or remote server down.\n")
@@ -3532,18 +3532,19 @@ def main():
         log('Tried 3 times to send and it blocked each time.  Aborting this connection!\n')
 
 
-      try:
-        data = serversocket.recv(BUFFER_SIZE) 
-        latency = getruntime() - starttime
-        log("latency: " + str(latency) + " sec\n")
-      except SocketWouldBlockError:
-          log("SocketWouldBlockError\n")
-          sleep(1)    
+      while True:
+        try:
+          data = serversocket.recv(BUFFER_SIZE) 
+          latency = (getruntime() - starttime)*1000
+          log("latency: " + str(latency) + " ms\n")
+          break
+        except SocketWouldBlockError:
+          continue    
         
     finally:
       serversocket.close()
       # wait for 5 mins and try again...
-      sleep(5*60)  
+      sleep(3)  
 
     
   
@@ -3552,6 +3553,7 @@ def main():
 FRIENDS_IDFILE = "friendsid"  # file that stores the unique ID of a node
 ID_LENGTH = 8  # length of the node ID
 BUFFER_SIZE = 64  # Normally 1024, but we want fast response
+SLEEP_TIME = 5*60
 
 DEST_IP = '198.162.52.143' # IP of lamport.cs.ubc.ca
 DEST_PORT = 63109
