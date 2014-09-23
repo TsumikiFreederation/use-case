@@ -3452,14 +3452,14 @@ def friend_init():
     filefd.close()
     
   # need to get the base time from NTP so we know how to calculate the offset...
-  """while True:
+  while True:
     try:
       time_updatetime(63105)
     except SocketWouldBlockError:
       sleep(5)
       log('failed to update time, retrying...\n')
     else:
-      break"""
+      break
 
   return nodeid
 
@@ -3473,6 +3473,12 @@ def main():
   log('finished initialization\n')
 
   candidate_port_list = list(getresources()[0]['connport'])
+  fd = openfile(LOGFILE, True)   # open log file to log latency
+
+  if LOGFILE in listfiles():  # log file exists
+    offset = len(fd.readat(None, 0))  # offset to write strings at the log file
+  else:
+    offset = 0   
 
   # open a connection to the remote server, send my info, and then sleep 5 mins (if successful)
   while True:
@@ -3512,10 +3518,8 @@ def main():
       for attempt in range(3):
         try:
           serversocket.send(messagetosend)
-          # success!  Log this...
-          starttime = getruntime()
-          #timestring = str(time_gettime())
-          log('friend ' + str(myid) + ' reported to server at ' + myip + '..\n')
+          # success! 
+          #log('friend ' + str(myid) + ' reported to server at ' + myip + '..\n')
           break
         except SocketWouldBlockError:
           log("SocketWouldBlockError in send\n")
@@ -3531,29 +3535,36 @@ def main():
       else:
         log('Tried 3 times to send and it blocked each time.  Aborting this connection!\n')
 
-
+      starttime = getruntime()  # ready to recv
+      
       while True:
         try:
           data = serversocket.recv(BUFFER_SIZE) 
-          latency = (getruntime() - starttime)*1000
-          log("latency: " + str(latency) + " ms\n")
+          latency = (getruntime() - starttime)*1000  # unit is ms
+          timestring = str(time_gettime())
+
+          logstring = timestring + '\t' + myip + '\t' + str(latency) + '\n'
+          fd.writeat(logstring, offset) 
+          offset = offset + len(logstring)
+          log(logstring)
           break
         except SocketWouldBlockError:
           continue    
         
     finally:
       serversocket.close()
-      # wait for 5 mins and try again...
-      sleep(3)  
+      # wait for SLEEP_TIME secs and try again...
+      sleep(SLEEP_TIME)  
 
-    
+  fd.close() 
   
 
 ############ main program ############  
 FRIENDS_IDFILE = "friendsid"  # file that stores the unique ID of a node
+LOGFILE = "latency.log" # file to log latency info
 ID_LENGTH = 8  # length of the node ID
 BUFFER_SIZE = 64  # Normally 1024, but we want fast response
-SLEEP_TIME = 5*60
+SLEEP_TIME = 30  # time to sleep between measurement
 
 DEST_IP = '198.162.52.143' # IP of lamport.cs.ubc.ca
 DEST_PORT = 63109
